@@ -5,3 +5,6 @@ logs/
 wandb/
 outputs/
 *.onnx
+
+# Training logs copied from Colab / Drive.
+/20??-??-??_*/

@@ -65,6 +65,8 @@ class FlipCommand(CommandTerm):
     # Trigger input (EV-3, EV-4, EV-8).
     self.trigger_input_time = zeros()  # inf = control episode, never fires.
     self.stable_time = zeros()  # EV-6 interlock timer.
+    self.filt_ang_vel = zeros()  # EV-6 filtered base angular speed.
+    self.filt_joint_vel = zeros()  # EV-6 filtered mean |joint velocity|.
     self.triggered = zeros(torch.bool)  # Latched, never cleared (EV-5).
     self.trigger_time = zeros()
     # Phase state.
@@ -225,8 +227,14 @@ class FlipCommand(CommandTerm):
     self.cmd_change_time = torch.where(change, math.inf, self.cmd_change_time)
 
     # Trigger with the EV-6 stability interlock.
-    stable = (data.root_link_ang_vel_b.norm(dim=-1) < C.STABLE_MAX_ANG_VEL) & (
-      data.joint_vel.abs().amax(dim=-1) < C.STABLE_MAX_JOINT_VEL
+    # EV-6: first-order low-pass filtered signals (reset to the current value).
+    a = min(1.0, dt / C.STABLE_FILTER_TAU_S)
+    ang = data.root_link_ang_vel_b.norm(dim=-1)
+    jv = data.joint_vel.abs().mean(dim=-1)
+    self.filt_ang_vel = torch.where(init, ang, self.filt_ang_vel + a * (ang - self.filt_ang_vel))
+    self.filt_joint_vel = torch.where(init, jv, self.filt_joint_vel + a * (jv - self.filt_joint_vel))
+    stable = (self.filt_ang_vel < C.STABLE_MAX_ANG_VEL) & (
+      self.filt_joint_vel < C.STABLE_MAX_JOINT_VEL
     )
     self.stable_time = torch.where(stable, self.stable_time + dt, 0.0)
     accept = (

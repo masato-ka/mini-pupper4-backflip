@@ -94,3 +94,18 @@ def test_command_changes_before_trigger_and_latches():
   assert torch.equal(flip.cmd_idx, expected)
   scalars = torch.tensor(C.COMMAND_SCALARS)[expected]
   assert torch.allclose(flip.command[:, 0], scalars)
+
+
+def test_interlock_tolerates_exploration_noise():
+  """Standing with action noise like the training policy (std 0.14) must
+  still pass the EV-6 interlock. Pure noise around the default pose, with no
+  controller: the filtered check accepts ~70 % within 2 s, the old
+  instantaneous per-joint check 0 %."""
+  cfg = scripted_flip_cfg()
+  env = make_plain_env(num_envs=16, commands={"flip": cfg})
+  flip = env.command_manager.get_term("flip")
+  torch.manual_seed(0)
+  env.reset()
+  for _ in range(int(2.0 / env.step_dt)):
+    env.step(0.14 * torch.randn(env.num_envs, env.action_manager.total_action_dim))
+  assert flip.triggered.float().mean() >= 0.5

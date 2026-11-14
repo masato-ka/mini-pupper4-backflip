@@ -103,9 +103,15 @@ NO_TRIGGER_PROB = 0.15  # EV-4 (10-20 %)
 COMMAND_CHANGE_PROB = 0.2  # EV-7
 INPUT_JITTER_STEPS = 1  # EV-8: 0..1 step
 # EV-6 interlock: stable for this long before the trigger is accepted.
+# "Stable" is judged on low-pass filtered signals (first-order, time constant
+# STABLE_FILTER_TAU_S): mean |joint velocity| over the 12 joints and the base
+# angular speed. Instantaneous per-joint maxima never stayed below the
+# thresholds under exploration noise (2nd Colab run, 2026-11-14: 0.5 % of
+# episodes triggered); the filtered mean accepts 95 % within ~0.6 s.
 STABLE_HOLD_S = 0.3
-STABLE_MAX_ANG_VEL = 0.5  # [rad/s], base
-STABLE_MAX_JOINT_VEL = 1.0  # [rad/s], any joint
+STABLE_FILTER_TAU_S = 0.1
+STABLE_MAX_ANG_VEL = 0.5  # [rad/s], base, filtered
+STABLE_MAX_JOINT_VEL = 1.0  # [rad/s], mean over joints, filtered
 
 ##
 # Phase transition thresholds.
