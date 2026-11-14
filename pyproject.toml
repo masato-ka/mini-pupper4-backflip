@@ -1,0 +1,30 @@
+[build-system]
+requires = ["uv_build>=0.8.19,<0.10.0"]
+build-backend = "uv_build"
+
+[project]
+name = "mjlab-backflip"
+version = "0.1.0"
+description = "Quadruped backflip RL on mjlab (Unitree Go2 pre-study for mini-pupper 4)"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11, <3.14"
+dependencies = [
+    "mjlab==1.6.0",
+    # mjlab 1.x imports scipy without declaring it.
+    "scipy>=1.16",
+    # mjviser 0.0.17 depends on mujoco-core 4.x, which overwrites the bundled
+    # plugins of mujoco 3.11 (required by mjlab 1.6.0) and breaks `import mujoco`
+    # with "Library not loaded: libmujoco.3.11.0.dylib" (found 2026-11-14).
+    "mjviser>=0.0.14,<0.0.17",
+]
+
+[project.entry-points."mjlab.tasks"]
+mjlab_backflip = "mjlab_backflip.tasks"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.ruff]
+src = ["src"]
+indent-width = 2
