@@ -17,7 +17,11 @@ Per stage the term also sets:
   - the command set and termination level (FlipCommand.set_stage),
   - the Land reward weights (0 in S1),
   - the success_bonus weight (0 in S1, linear ramp 0 -> 20 in S2),
-  - the DR ranges (narrow in S1-S2, full from S3).
+  - the DR ranges (narrow in S1-S2, full from S3),
+  - the EV-6 stability interlock (off before ``interlock_from_stage``, S4 by
+    default). With the interlock on from the start, the policy never got
+    the trigger accepted: exploration noise kept the body moving, and
+    staying untriggered (+alive, no failure risk) paid more than flipping.
 
 The curriculum runs at the start of every reset, before the command and
 event resets, so it sees the finished episodes' flip state and its DR
@@ -68,6 +72,7 @@ class flip_curriculum:
     }
     self._success_weight = rm.get_term_cfg(SUCCESS_REWARD).weight
     self._ema_alpha = 1.0 / p.get("ema_episodes", 2000)
+    self._interlock_from = p.get("interlock_from_stage", 3)
     self._rates = torch.zeros(4, device=env.device)  # rotation, success, low/mid/high min
     self._cmd_success = torch.zeros(3, device=env.device)
     self._stage = -1
@@ -109,6 +114,7 @@ class flip_curriculum:
     self._rates.zero_()
     self._cmd_success.zero_()
     self._flip.set_stage(stage)
+    self._flip.interlock = stage >= self._interlock_from
     # Land terms off in S1.
     rm = self._env.reward_manager
     for name, w in self._land_weights.items():
@@ -152,6 +158,7 @@ class flip_curriculum:
     ema_episodes: int = 2000,
     start_stage: int = 0,
     fixed_stage: int = -1,
+    interlock_from_stage: int = 3,
   ) -> dict[str, float]:
     flip = self._flip
     if isinstance(env_ids, slice):
@@ -205,4 +212,5 @@ class flip_curriculum:
       "above_streak": float(self._above),
       "below_streak": float(self._below),
       "success_bonus_weight": w,
+      "interlock": float(flip.interlock),
     }

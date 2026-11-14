@@ -74,6 +74,7 @@ def test_initial_stage_effects(env):
     assert rm.get_term_cfg(name).weight == 0.0  # Land terms off in S1.
   assert rm.get_term_cfg("success_bonus").weight == 0.0
   assert env.event_manager.get_term_cfg("foot_friction").params["ranges"] == C.DR_NARROW["foot_friction"]
+  assert not flip.interlock  # EV-6 off until S4.
 
 
 def test_promotion_ladder_and_effects(env):
@@ -97,8 +98,10 @@ def test_promotion_ladder_and_effects(env):
   # S3 -> S4 needs every command; Mid alone is not enough.
   state = _until_stage(env, 3, cmds=(C.MID,), rotated=True, success=True)
   assert _stage(state) == 2
+  assert not flip.interlock
   state = _until_stage(env, 3, cmds=(C.LOW, C.MID, C.HIGH), rotated=True, success=True)
   assert _stage(state) == 3 and flip.level == 2
+  assert flip.interlock and state["interlock"] == 1.0
 
 
 def test_demotion_after_min_stay(env):

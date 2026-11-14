@@ -109,3 +109,25 @@ def test_interlock_tolerates_exploration_noise():
   for _ in range(int(2.0 / env.step_dt)):
     env.step(0.14 * torch.randn(env.num_envs, env.action_manager.total_action_dim))
   assert flip.triggered.float().mean() >= 0.5
+
+
+def test_without_interlock_trigger_is_accepted_at_input_time():
+  """Training S1-S3: the trigger does not wait for a stable stand."""
+  cfg = scripted_flip_cfg()
+  cfg.interlock = False
+  env = make_plain_env(commands={"flip": cfg})
+  robot = env.scene["robot"]
+  flip = env.command_manager.get_term("flip")
+  env.reset()
+  shake = lambda: robot.write_joint_velocity_to_sim(torch.full_like(robot.data.joint_vel, 3.0))
+  _step_for(env, 1.0, before_step=shake)
+  assert bool(flip.triggered[0])
+  assert flip.trigger_time[0] == pytest.approx(0.5, abs=0.03)
+
+
+def test_play_cfg_keeps_the_interlock():
+  import mjlab  # noqa: F401
+  from mjlab.tasks.registry import load_env_cfg
+
+  cfg = load_env_cfg("Mjlab-Backflip-Flat-Unitree-Go2", play=True)
+  assert cfg.commands["flip"].interlock and not cfg.curriculum

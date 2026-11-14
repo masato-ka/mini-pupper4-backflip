@@ -260,4 +260,7 @@ CURRICULUM = {
   # >= 0 pins the stage (debugging); -1 = automatic. An int (not None) so the
   # train CLI can set it: tyro infers the flag type from this default.
   "fixed_stage": -1,
+  # EV-6 interlock is enforced from this stage on (3 = S4); before it the
+  # trigger is accepted at its input time. See curriculum.py.
+  "interlock_from_stage": 3,
 }

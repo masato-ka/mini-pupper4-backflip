@@ -49,6 +49,9 @@ class FlipCommand(CommandTerm):
     # Curriculum-controlled (M5 writes these; fixed_* override).
     self.stage = cfg.fixed_stage if cfg.fixed_stage is not None else 0
     self.level = cfg.fixed_level if cfg.fixed_level is not None else C.STAGES[self.stage].level
+    # EV-6 interlock on/off. The curriculum turns it off in S1-S3 (see
+    # curriculum.py); play / evaluation keep the cfg value (on).
+    self.interlock = cfg.interlock
 
     # Lookup tables indexed by command id.
     self._cmd_scalar = torch.tensor(C.COMMAND_SCALARS, device=dev)
@@ -241,7 +244,7 @@ class FlipCommand(CommandTerm):
       (self.phase == C.STAND)
       & ~self.triggered
       & (t >= self.trigger_input_time)
-      & (self.stable_time >= C.STABLE_HOLD_S)
+      & ((self.stable_time >= C.STABLE_HOLD_S) | (not self.interlock))
     )
     self.triggered |= accept
     self.trigger_time = torch.where(accept, t, self.trigger_time)
@@ -441,6 +444,9 @@ class FlipCommandCfg(CommandTermCfg):
   no_trigger_prob: float = C.NO_TRIGGER_PROB
   command_change_prob: float = C.COMMAND_CHANGE_PROB
   input_jitter_steps: int = C.INPUT_JITTER_STEPS
+  # EV-6 stability interlock. On for play / evaluation / the real robot; the
+  # training curriculum switches it per stage.
+  interlock: bool = True
   # Debug / curriculum overrides (None = automatic).
   fixed_command: int | None = None
   fixed_stage: int | None = None
