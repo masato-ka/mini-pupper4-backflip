@@ -108,18 +108,24 @@ def test_phase_gating(rollout):
       assert not (active & AIR_TERMS), (C.PHASE_NAMES[phase], active & AIR_TERMS)
     if phase not in (C.LAND, C.DONE):
       assert not (active & LAND_TERMS), (C.PHASE_NAMES[phase], active & LAND_TERMS)
+    if phase not in (C.STAND, C.DONE):
+      assert "alive" not in active, C.PHASE_NAMES[phase]
   assert seen == set(range(C.NUM_PHASES))
 
 
 def test_sparse_terms_fire_once(rollout):
   names, weights, steps, sums = rollout
   idx = {n: i for i, n in enumerate(names)}
-  for name in ("apex_bonus", "success_bonus"):
+  for name in ("apex_bonus", "success_bonus", "crouch_depth"):
     fired = [p for p, raw in steps if raw[idx[name]] > 0]
     assert len(fired) == 1, (name, fired)
+  # crouch_depth fires on the Crouch -> Launch step.
+  assert [p for p, raw in steps if raw[idx["crouch_depth"]] > 0] == [C.LAUNCH]
   # Episode totals: success is the full weight, the apex at most the weight.
   assert sums["success_bonus"] == pytest.approx(C.REWARD_WEIGHTS["success_bonus"], rel=1e-4)
   assert 0 < sums["apex_bonus"] <= C.REWARD_WEIGHTS["apex_bonus"] + 1e-4
-  # The success tail is a truncation: no failure penalty, alive all along.
+  # The success tail is a truncation: no failure penalty. alive is paid in
+  # Stand and Done only.
   assert sums["terminal_penalty"] == 0.0
-  assert sums["alive"] == pytest.approx(len(steps) * C.REWARD_WEIGHTS["alive"] * 0.02, rel=1e-4)
+  n_alive = sum(1 for p, _ in steps if p in (C.STAND, C.DONE))
+  assert sums["alive"] == pytest.approx(n_alive * C.REWARD_WEIGHTS["alive"] * 0.02, rel=1e-4)

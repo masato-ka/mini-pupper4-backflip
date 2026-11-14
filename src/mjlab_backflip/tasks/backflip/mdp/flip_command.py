@@ -254,7 +254,13 @@ class FlipCommand(CommandTerm):
     nxt = p.clone()
     t1 = (p == C.STAND) & accept
     t2 = (p == C.CROUCH) & (h < self.crouch_height)
-    t3 = (p == C.LAUNCH) & (self.air_cnt >= C.TAKEOFF_AIR_STEPS)
+    # A real takeoff: feet off for 2 steps *and* moving up. Lifting the feet
+    # while the body sinks used to count as Air (4th Colab run).
+    t3 = (
+      (p == C.LAUNCH)
+      & (self.air_cnt >= C.TAKEOFF_AIR_STEPS)
+      & (vz >= C.TAKEOFF_MIN_VZ_RATIO * self.v_star)
+    )
     t4 = (p == C.AIR) & (self.air_steps >= C.TOUCHDOWN_MIN_AIR_STEPS) & (n_c >= 1)
     upright = -g[:, 2] >= C.UPRIGHT_MIN_COS
     settled = (data.root_link_lin_vel_w.norm(dim=-1) < C.SETTLED_MAX_LIN_VEL) & (

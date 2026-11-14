@@ -100,7 +100,8 @@ def terminated_once(env: ManagerBasedRlEnv) -> torch.Tensor:
 
 
 def alive(env: ManagerBasedRlEnv) -> torch.Tensor:
-  """1 per step while not failed (weight = reward per second of survival)."""
+  """1 per step while not failed (weight = reward per second of survival).
+  Applied in Stand and Done only (phase_gated in the env cfg)."""
   return (~env.termination_manager.terminated).float()
 
 
@@ -189,9 +190,16 @@ class feet_distance:
 
 
 def crouch_depth(env: ManagerBasedRlEnv, command_name: str = "flip") -> torch.Tensor:
-  """[cmd] kern(h - rho_c h_nom, 0.03)."""
+  """[cmd] Sparse: kern(h - rho_c h_nom, 0.03) once, on the Crouch -> Launch
+  step (T2).
+
+  Was dense in Crouch; the kernel is centred on the T2 threshold, so the
+  policy hovered 1.5 cm above it and farmed the term for the whole Crouch
+  time limit (4th Colab run, 2026-11-14).
+  """
   flip = _flip(env, command_name)
-  return kern(flip.base_height() - flip.crouch_height, C.CROUCH_DEPTH_STD)
+  value = kern(flip.base_height() - flip.crouch_height, C.CROUCH_DEPTH_STD)
+  return torch.where(flip.entered[:, C.LAUNCH], value / env.step_dt, 0.0)
 
 
 def pitch_tilt(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _ROBOT) -> torch.Tensor:

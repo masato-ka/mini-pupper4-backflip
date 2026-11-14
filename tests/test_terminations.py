@@ -231,3 +231,27 @@ def test_ev14_drift_uses_the_final_pose(env):
   # already-reset pose (the old bug) gave ~0 here.
   assert 0.7 < log["Metrics/flip/ev14/xy_drift"] < 1.3
   assert log["Metrics/flip/ev14/yaw_change"] < 0.1
+
+
+def test_lifting_the_feet_without_moving_up_is_not_a_takeoff(env):
+  """T3 needs v_z >= 0.3 v*: raising the body without upward speed keeps
+  the robot in Launch (it then fails on the Launch time limit)."""
+  seen = set()
+
+  def ctrl(env, flip, prev):
+    p = int(flip.phase[0])
+    seen.add(p)
+    robot = env.scene["robot"]
+    if p == C.LAUNCH and prev == C.CROUCH:
+      # Feet leave the ground, but the base is not moving up.
+      pos = robot.data.root_link_pos_w.clone()
+      pos[:, 2] += 0.15
+      robot.write_root_link_pose_to_sim(torch.cat([pos, robot.data.root_link_quat_w], dim=-1))
+      robot.write_root_link_velocity_b_to_sim(torch.zeros(1, 6))
+    if p == C.CROUCH:
+      return leg_action(robot, 0.6, -1.2)
+    return torch.zeros(1, 12)
+
+  done = _run(env, 2, ctrl)
+  assert C.LAUNCH in seen and C.AIR not in seen
+  assert "phase_timeout" in done

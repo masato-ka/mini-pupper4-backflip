@@ -121,6 +121,7 @@ STABLE_MAX_JOINT_VEL = 1.0  # [rad/s], mean over joints, filtered
 # otherwise it integrates the gyro pitch rate.
 THETA_MIN_PROJECTION = 0.5
 TAKEOFF_AIR_STEPS = 2  # T3: n_c == 0 for this many consecutive steps.
+TAKEOFF_MIN_VZ_RATIO = 0.3  # T3: and v_z >= 0.3 v* (Mid: 0.79 m/s, ~3 cm rise).
 TOUCHDOWN_MIN_AIR_STEPS = 2  # T4: steps in Air before a contact counts.
 # T5 / EV-9 "upright" and "slow".
 UPRIGHT_MIN_COS = math.cos(math.radians(25.0))
@@ -187,7 +188,9 @@ REWARD_WEIGHTS = {
   "roll": -10.0,  # Launch..Land
   "yaw_rate": -1.0,  # Launch..Land
   "terminal_penalty": -5.0,  # Once per failure (sparse, not scaled by dt).
-  # Survival bonus per second; not in the original spec (added 2026-11-14).
+  # Survival bonus per second in Stand and Done only; not in the original spec
+  # (added 2026-11-14, restricted to Stand/Done the same day: in the other
+  # phases it paid for loitering in Crouch / Land).
   # Without it the Stand terms are all penalties and the first run (Colab,
   # 2026-11-14_05-49-16) learned to drop the torso within 0.3 s.
   "alive": 1.0,
@@ -198,7 +201,7 @@ REWARD_WEIGHTS = {
   "stand_still": -1.0,
   "feet_distance": -1.0,
   # Crouch.
-  "crouch_depth": 2.0,
+  "crouch_depth": 2.0,  # Sparse: once at T2.
   "crouch_level": -5.0,
   "feet_stay": -30.0,
   "no_early_pop": -2.0,

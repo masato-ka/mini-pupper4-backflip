@@ -276,7 +276,7 @@ def _rewards() -> dict[str, RewardTermCfg]:
     "roll": gated("roll", airborne, R.roll),
     "yaw_rate": gated("yaw_rate", airborne, R.yaw_rate),
     "terminal_penalty": RewardTermCfg(func=R.terminated_once, weight=w["terminal_penalty"]),
-    "alive": RewardTermCfg(func=R.alive, weight=w["alive"]),
+    "alive": gated("alive", (C.STAND, C.DONE), R.alive),
     "leg_contact": RewardTermCfg(
       func=R.contact_count, weight=w["leg_contact"], params={"sensor_name": "leg_ground_contact"}
     ),
@@ -288,7 +288,7 @@ def _rewards() -> dict[str, RewardTermCfg]:
       func=R.feet_distance, weight=w["feet_distance"], params={"asset_cfg": feet}
     ),
     # Crouch.
-    "crouch_depth": gated("crouch_depth", (C.CROUCH,), R.crouch_depth),
+    "crouch_depth": RewardTermCfg(func=R.crouch_depth, weight=w["crouch_depth"]),  # Once at T2.
     "crouch_level": gated("crouch_level", (C.CROUCH,), R.pitch_tilt),
     "feet_stay": gated(
       "feet_stay", (C.CROUCH,), R.feet_lift, foot_radius=FOOT_RADIUS, asset_cfg=feet
