@@ -92,6 +92,18 @@ class actions_symmetry:
     return torch.sum(torch.square(diff), dim=-1)
 
 
+def terminated_once(env: ManagerBasedRlEnv) -> torch.Tensor:
+  """Sparse: 1 / step_dt on the failure step, so the penalty is the weight
+  once (mjlab's is_terminated would be scaled down to weight * dt).
+  Truncations (time_out, success tail) are not failures."""
+  return env.termination_manager.terminated.float() / env.step_dt
+
+
+def alive(env: ManagerBasedRlEnv) -> torch.Tensor:
+  """1 per step while not failed (weight = reward per second of survival)."""
+  return (~env.termination_manager.terminated).float()
+
+
 def roll(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _ROBOT) -> torch.Tensor:
   """g_y^2."""
   return torch.square(env.scene[asset_cfg.name].data.projected_gravity_b[:, 1])

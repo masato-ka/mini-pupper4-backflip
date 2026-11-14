@@ -181,3 +181,53 @@ def test_no_hop_after_auto_reset(env):
   # ctrl is in actuator order; compare as sets of values per substep.
   for ctrl in ctrl_log:
     assert torch.allclose(ctrl.sort().values, default_target.sort().values, atol=1e-5)
+
+
+def test_failure_costs_the_full_terminal_penalty(env):
+  """A failure costs -5 once (not -5 * dt) and stops the alive bonus."""
+  rm = env.reward_manager
+  names = list(rm.active_terms)
+  i_pen, i_alive = names.index("terminal_penalty"), names.index("alive")
+  totals = torch.zeros(2)
+
+  def ctrl(env, flip, prev):
+    totals[0] += rm._step_reward[0, i_pen] * env.step_dt
+    totals[1] += rm._step_reward[0, i_alive] * env.step_dt
+    if env.episode_length_buf[0] == 1:
+      robot = env.scene["robot"]
+      state = robot.data.default_root_state.clone()
+      state[:, 2] = 0.5
+      state[:, 3:7] = quat_from_euler_xyz(torch.tensor([math.pi]), torch.zeros(1), torch.zeros(1))
+      robot.write_root_state_to_sim(state)
+      flip._needs_init[0] = True
+    return torch.zeros(1, 12)
+
+  done = _run(env, 2, ctrl)
+  assert "base_contact" in done
+  # The last step's reward is read after _run returns.
+  totals[0] += rm._step_reward[0, i_pen] * env.step_dt
+  assert totals[0].item() == pytest.approx(C.REWARD_WEIGHTS["terminal_penalty"], rel=1e-4)
+  assert rm._step_reward[0, i_alive].item() == 0.0
+
+
+def test_ev14_drift_uses_the_final_pose(env):
+  """xy_drift / yaw_change compare the episode's last pose with its start."""
+  flip = env.command_manager.get_term("flip")
+  shift = {"done": False}
+
+  def ctrl(env, flip_, prev):
+    if not shift["done"] and bool(flip_.triggered[0]):
+      robot = env.scene["robot"]
+      pos = robot.data.root_link_pos_w.clone()
+      pos[:, 0] += 1.0
+      pose = torch.cat([pos, robot.data.root_link_quat_w], dim=-1)
+      robot.write_root_link_pose_to_sim(pose)
+      shift["done"] = True
+    return torch.zeros(1, 12)
+
+  _run(env, 2, ctrl)  # Ends by the Crouch timeout (no crouch).
+  log = env.extras["log"]
+  # The base is moved 1 m; it may slide a little afterwards. Reading the
+  # already-reset pose (the old bug) gave ~0 here.
+  assert 0.7 < log["Metrics/flip/ev14/xy_drift"] < 1.3
+  assert log["Metrics/flip/ev14/yaw_change"] < 0.1

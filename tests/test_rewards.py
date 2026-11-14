@@ -16,7 +16,7 @@ TASK = "Mjlab-Backflip-Flat-Unitree-Go2"
 
 POSITIVE = {
   "crouch_depth", "takeoff_vz", "pitch_kick", "apex_bonus", "flip_progress",
-  "land_prep", "upright", "land_height", "feet_all_contact", "success_bonus",
+  "land_prep", "upright", "land_height", "feet_all_contact", "success_bonus", "alive",
 }
 STAND_TERMS = {"stand_height", "stand_pose", "stand_still", "feet_distance"}
 AIR_TERMS = {"apex_bonus", "apex_overshoot", "flip_progress", "wrong_direction", "tuck", "land_prep"}
@@ -120,3 +120,6 @@ def test_sparse_terms_fire_once(rollout):
   # Episode totals: success is the full weight, the apex at most the weight.
   assert sums["success_bonus"] == pytest.approx(C.REWARD_WEIGHTS["success_bonus"], rel=1e-4)
   assert 0 < sums["apex_bonus"] <= C.REWARD_WEIGHTS["apex_bonus"] + 1e-4
+  # The success tail is a truncation: no failure penalty, alive all along.
+  assert sums["terminal_penalty"] == 0.0
+  assert sums["alive"] == pytest.approx(len(steps) * C.REWARD_WEIGHTS["alive"] * 0.02, rel=1e-4)

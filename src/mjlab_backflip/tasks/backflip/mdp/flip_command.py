@@ -105,6 +105,10 @@ class FlipCommand(CommandTerm):
     self.land_acc_peak = zeros()
     self.start_xy = torch.zeros(n, 2, device=dev)
     self.start_yaw = zeros()
+    # Pose at the last state update. reset() runs after the scene has been
+    # reset, so the episode's final pose must be kept here.
+    self.last_xy = torch.zeros(n, 2, device=dev)
+    self.last_yaw = zeros()
 
   ##
   # Derived quantities (read by observations, rewards, terminations).
@@ -294,6 +298,8 @@ class FlipCommand(CommandTerm):
     root_xy = data.root_link_pos_w[:, :2]
     self.start_xy = torch.where(init[:, None], root_xy, self.start_xy)
     self.start_yaw = torch.where(init, data.heading_w, self.start_yaw)
+    self.last_xy = root_xy.clone()
+    self.last_yaw = data.heading_w.clone()
     self.phase_dur[torch.arange(self.num_envs, device=self.device), self.phase] += torch.where(
       init, 0.0, dt
     )
@@ -398,10 +404,9 @@ class FlipCommand(CommandTerm):
         extras["ev14/land_acc_peak"] = self.land_acc_peak[ids][land].mean().item()
       extras["ev14/torque_peak"] = self.torque_peak[ids].mean().item()
       extras["ev14/joint_vel_peak"] = self.joint_vel_peak[ids].mean().item()
-      data = self.robot.data
-      drift = (data.root_link_pos_w[ids, :2] - self.start_xy[ids]).norm(dim=-1)
+      drift = (self.last_xy[ids] - self.start_xy[ids]).norm(dim=-1)
       extras["ev14/xy_drift"] = drift.mean().item()
-      dyaw = wrap_to_pi(data.heading_w[ids] - self.start_yaw[ids]).abs()
+      dyaw = wrap_to_pi(self.last_yaw[ids] - self.start_yaw[ids]).abs()
       extras["ev14/yaw_change"] = dyaw.mean().item()
       for i, name in enumerate(C.PHASE_NAMES):
         extras[f"phase_time/{name}"] = self.phase_dur[ids, i].mean().item()

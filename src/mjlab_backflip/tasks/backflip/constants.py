@@ -180,7 +180,11 @@ REWARD_WEIGHTS = {
   "joint_limits": -1.0,
   "roll": -10.0,  # Launch..Land
   "yaw_rate": -1.0,  # Launch..Land
-  "terminal_penalty": -5.0,
+  "terminal_penalty": -5.0,  # Once per failure (sparse, not scaled by dt).
+  # Survival bonus per second; not in the original spec (added 2026-11-14).
+  # Without it the Stand terms are all penalties and the first run (Colab,
+  # 2026-11-14_05-49-16) learned to drop the torso within 0.3 s.
+  "alive": 1.0,
   "leg_contact": -1.0,  # Not in the spec's table: thigh/calf contact is penalized, not terminal (TM-2 note).
   # Stand.
   "stand_height": -10.0,

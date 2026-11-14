@@ -275,7 +275,8 @@ def _rewards() -> dict[str, RewardTermCfg]:
     "joint_limits": RewardTermCfg(func=envs_mdp.joint_pos_limits, weight=w["joint_limits"]),
     "roll": gated("roll", airborne, R.roll),
     "yaw_rate": gated("yaw_rate", airborne, R.yaw_rate),
-    "terminal_penalty": RewardTermCfg(func=envs_mdp.is_terminated, weight=w["terminal_penalty"]),
+    "terminal_penalty": RewardTermCfg(func=R.terminated_once, weight=w["terminal_penalty"]),
+    "alive": RewardTermCfg(func=R.alive, weight=w["alive"]),
     "leg_contact": RewardTermCfg(
       func=R.contact_count, weight=w["leg_contact"], params={"sensor_name": "leg_ground_contact"}
     ),
