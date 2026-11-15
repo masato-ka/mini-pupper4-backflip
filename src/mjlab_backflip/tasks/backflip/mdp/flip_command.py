@@ -260,14 +260,17 @@ class FlipCommand(CommandTerm):
     p = self.phase
     nxt = p.clone()
     t1 = (p == C.STAND) & accept
-    t2 = (p == C.CROUCH) & (h < self.crouch_height)
     # A real takeoff: feet off for 2 steps *and* moving up. Lifting the feet
     # while the body sinks used to count as Air (4th Colab run).
-    t3 = (
-      (p == C.LAUNCH)
-      & (self.air_cnt >= C.TAKEOFF_AIR_STEPS)
-      & (vz >= C.TAKEOFF_MIN_VZ_RATIO * self.v_star)
-    )
+    takeoff = (self.air_cnt >= C.TAKEOFF_AIR_STEPS) & (vz >= C.TAKEOFF_MIN_VZ_RATIO * self.v_star)
+    t2 = (p == C.CROUCH) & (h < self.crouch_height)
+    # A takeoff from Crouch skips Launch: the crouch depth is a means, not a
+    # requirement (Colab run 2026-11-15_04-43-40, model_2000: crouched to
+    # 0.24 m > rho_c h_nom = 0.22 m, jumped 0.6 m and landed one full turn,
+    # but the state machine stayed in Crouch, so EV-9 was never judged).
+    skip = (p == C.CROUCH) & takeoff
+    t3 = ((p == C.LAUNCH) | skip) & takeoff
+    t2 &= ~skip
     t4 = (p == C.AIR) & (self.air_steps >= C.TOUCHDOWN_MIN_AIR_STEPS) & (n_c >= 1)
     upright = -g[:, 2] >= C.UPRIGHT_MIN_COS
     settled = (data.root_link_lin_vel_w.norm(dim=-1) < C.SETTLED_MAX_LIN_VEL) & (
@@ -283,6 +286,7 @@ class FlipCommand(CommandTerm):
     t5 = (p == C.LAND) & (self.land_hold >= lvl.success_hold_s)
     # The first step after a reset only initializes the angle reference.
     t1, t2, t3, t4, t5 = (m & ~init for m in (t1, t2, t3, t4, t5))
+    skip &= ~init
     nxt[t1] = C.CROUCH
     nxt[t2] = C.LAUNCH
     nxt[t3] = C.AIR
@@ -322,6 +326,7 @@ class FlipCommand(CommandTerm):
 
     moved = nxt != p
     self.entered[moved, nxt[moved]] = True
+    self.entered[skip, C.LAUNCH] = True
     self.phase_time = torch.where(moved, 0.0, self.phase_time + dt)
     self.phase = nxt
     self.max_phase = torch.maximum(self.max_phase, self.phase)

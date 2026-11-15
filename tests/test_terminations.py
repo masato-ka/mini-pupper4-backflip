@@ -242,3 +242,20 @@ def test_lifting_the_feet_without_moving_up_is_not_a_takeoff(env):
   done = _run(env, 2, ctrl)
   assert C.LAUNCH in seen and C.AIR not in seen
   assert "phase_timeout" in done
+
+
+def test_takeoff_from_a_shallow_crouch_skips_launch(env):
+  """A jump without crouching below rho_c h_nom still goes Crouch -> Air
+  (model_2000 of the 2026-11-15_04-43-40 run stayed in Crouch all along)."""
+  seen = []
+
+  def ctrl(env, flip_, prev):
+    p = int(flip_.phase[0])
+    seen.append(p)
+    if p == C.CROUCH and len([q for q in seen if q == C.CROUCH]) == 5:
+      _set_base_velocity(env, C.takeoff_speed(C.JUMP_HEIGHTS[C.MID]), 0.0)
+    return torch.zeros(1, 12)  # Default stand: never below the crouch height.
+
+  _run(env, 2, ctrl)
+  assert C.AIR in seen and C.LAUNCH not in seen
+  assert seen.index(C.AIR) > seen.index(C.CROUCH)
