@@ -6,8 +6,8 @@ Colab cell. This script only renders offscreen and exits.
   uv run python scripts/record_video.py --checkpoint logs/rsl_rl/go2_backflip/<run>/model_1000.pt \
       [--command mid] [--seconds 4] [--out flip.mp4] [--interlock] [--device cuda:0]
 
-The EV-6 interlock is off unless --interlock is given (as in training
-S1-S3); a policy trained without it may never get the trigger accepted.
+The EV-6 interlock is off unless --interlock is given (as in training);
+a policy that does not stand still may never get the trigger accepted.
 """
 
 import argparse

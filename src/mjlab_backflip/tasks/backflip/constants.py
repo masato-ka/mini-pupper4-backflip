@@ -210,6 +210,10 @@ REWARD_WEIGHTS = {
   "feet_distance": -1.0,
   "action_rate": -0.001,
   "joint_limits": -1.0,  # Not in Genesis; kept from the spec for the real robot.
+  # Not in Genesis (added 2026-11-15): stand still until the trigger, so the
+  # EV-6 interlock accepts it on the real robot (the interlock is off in
+  # training; the mean policy of model_750 passed it in 0-2 % of episodes).
+  "stand_still": -0.1,  # EV-6 filtered |omega| + mean |q_dot|, before the trigger.
 }
 
 # Time windows, tau = time since the accepted trigger [s].
@@ -251,7 +255,7 @@ CURRICULUM = {
   # >= 0 pins the stage (debugging); -1 = automatic. An int (not None) so the
   # train CLI can set it: tyro infers the flag type from this default.
   "fixed_stage": -1,
-  # EV-6 interlock is enforced from this stage on (3 = S4); before it the
-  # trigger is accepted at its input time. See curriculum.py.
-  "interlock_from_stage": 3,
+  # EV-6 interlock is enforced from this stage on; -1 = never (training
+  # accepts the trigger at its input time). See curriculum.py.
+  "interlock_from_stage": -1,
 }

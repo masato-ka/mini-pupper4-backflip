@@ -263,6 +263,7 @@ def _rewards() -> dict[str, RewardTermCfg]:
     ),
     "height_control": term("height_control", R.height_control),
     "flip_landing": term("flip_landing", R.flip_landing),
+    "stand_still": term("stand_still", R.stand_still),
     # Always on.
     "gravity_y": term("gravity_y", R.gravity_y),
     "ang_vel_z": term("ang_vel_z", R.ang_vel_z),

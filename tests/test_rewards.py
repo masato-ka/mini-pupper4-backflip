@@ -124,6 +124,8 @@ def test_windows(env):
       assert raw[idx["feet_height_before"]] == 0.0, tau
     if 0.0 <= tau <= C.FLIP_START_S + C.FLIP_SETTLE_S:
       assert raw[idx["height_control"]] == 0.0, tau
+    if tau >= 0.0:
+      assert raw[idx["stand_still"]] == 0.0, tau
 
 
 def test_untriggered_episode_has_no_flip_reward(env):
@@ -154,3 +156,25 @@ def test_landed_metric(env):
   assert env.extras["log"]["Metrics/flip/rate/landed"] == 0.0
   _episode(env, throw=True)
   assert env.extras["log"]["Metrics/flip/rate/landed"] == 1.0
+
+
+def test_stand_still_penalizes_motion_before_the_trigger(env):
+  """The EV-6 signals before the trigger: a still stand costs little, a
+  shaking one (exploration-like noise) clearly more."""
+  flip = env.command_manager.get_term("flip")
+  idx = list(env.reward_manager.active_terms).index("stand_still")
+  w = C.REWARD_WEIGHTS["stand_still"]
+
+  def mean_raw(noise_std):
+    env.reset()
+    flip.trigger_input_time[:] = math.inf
+    gen = torch.Generator().manual_seed(0)
+    raws = []
+    for i in range(int(1.0 / env.step_dt)):
+      env.step(noise_std * torch.randn(1, 12, generator=gen))
+      if i >= 10:  # After the reset settles.
+        raws.append(float(env.reward_manager._step_reward[0, idx]) / w)
+    return sum(raws) / len(raws)
+
+  still, shaking = mean_raw(0.0), mean_raw(0.5)
+  assert still < C.STABLE_MAX_JOINT_VEL and shaking > 3 * still + 1.0, (still, shaking)

@@ -9,10 +9,10 @@ judge a policy against EV-9.
   uv run python scripts/evaluate_policy.py --checkpoint logs/rsl_rl/go2_backflip/<run>/model_1000.pt \
       [--level 2] [--command mid] [--num-envs 64] [--noise-std 0] [--interlock] [--device cuda:0]
 
-The EV-6 interlock is off by default, as in training S1-S3. With
---interlock the trigger waits for a still stand, as on the real robot and in
-S4; a policy trained without it may never get the trigger accepted (model_750
-of that run: 0-2 % within the episode).
+The EV-6 interlock is off by default, as in training. With
+--interlock the trigger waits for a still stand, as on the real robot; check
+that the stand_still reward made the policy stand still enough (model_750,
+trained before that reward: 0-2 % accepted within the episode).
 
 Prints the success / landed / rotation rates, how often each EV-9 condition
 holds during Land, and the median trajectory against the time since the

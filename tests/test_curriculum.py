@@ -78,7 +78,7 @@ def test_initial_stage_effects(env):
   assert flip.allowed_commands == (C.MID,)
   _assert_weights_untouched(rm)
   assert env.event_manager.get_term_cfg("foot_friction").params["ranges"] == C.DR_NARROW["foot_friction"]
-  assert not flip.interlock  # EV-6 off until S4.
+  assert not flip.interlock  # EV-6 off in training.
 
 
 def test_promotion_ladder_and_effects(env):
@@ -100,7 +100,8 @@ def test_promotion_ladder_and_effects(env):
   assert not flip.interlock
   state = _until_stage(env, 3, cmds=(C.LOW, C.MID, C.HIGH), rotated=True, success=True)
   assert _stage(state) == 3 and flip.level == 2
-  assert flip.interlock and state["interlock"] == 1.0
+  # The interlock stays off in S4 too: no trigger was ever accepted with it.
+  assert not flip.interlock and state["interlock"] == 0.0
   _assert_weights_untouched(rm)
 
 
@@ -143,3 +144,29 @@ def test_fixed_stage(env):
   state = _finish_episodes(env, rotated=False, success=False)
   flip = env.command_manager.get_term("flip")
   assert _stage(state) == 2 and flip.level == 1
+
+
+def test_interlock_from_stage_opt_in():
+  cfg = load_env_cfg(TASK)
+  cfg.scene.num_envs = 8
+  cfg.curriculum["flip"].params.update(FAST, interlock_from_stage=3, fixed_stage=3)
+  env = ManagerBasedRlEnv(cfg=cfg, device="cpu")
+  env.reset()
+  state = _finish_episodes(env, rotated=False, success=False)
+  assert _stage(state) == 3 and state["interlock"] == 1.0
+
+
+def test_resume_restarts_the_stay_timer(env):
+  """The runner restores common_step_counter after the env is built: the
+  iterations before the resume must not count towards min_iters."""
+  _params(env)["start_stage"] = 1
+  env.common_step_counter += 24 * 10_000  # Restored from a checkpoint.
+  state = _until_stage(env, 1, rotated=True, success=False)
+  assert _stage(state) == 1
+  # min_iters (5) not yet over: landing every time does not promote.
+  for _ in range(FAST["min_iters"] - 1):
+    state = _finish_episodes(env, rotated=True, success=True, cmd=C.MID)
+  assert _stage(state) == 1
+  for _ in range(3):
+    state = _finish_episodes(env, rotated=True, success=True, cmd=C.MID)
+  assert _stage(state) == 2

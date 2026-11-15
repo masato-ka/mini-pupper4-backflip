@@ -134,6 +134,19 @@ def flip_landing(env: ManagerBasedRlEnv, command_name: str = "flip") -> torch.Te
   return torch.where(after, rot * height * feet, 0.0)
 
 
+def stand_still(env: ManagerBasedRlEnv, command_name: str = "flip") -> torch.Tensor:
+  """EV-6 filtered |omega_base| + mean |q_dot| before the accepted trigger
+  (the whole episode without one).
+
+  The interlock that waits for these to settle is off in training (the
+  exploration noise never lets them settle); this term teaches the still
+  stand it needs on the real robot. Before the trigger, so it never weighs
+  on the flip itself.
+  """
+  flip = _flip(env, command_name)
+  return torch.where(flip.triggered, 0.0, flip.filt_ang_vel + flip.filt_joint_vel)
+
+
 ##
 # Always on.
 ##

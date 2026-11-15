@@ -49,7 +49,7 @@ class FlipCommand(CommandTerm):
     # Curriculum-controlled (M5 writes these; fixed_* override).
     self.stage = cfg.fixed_stage if cfg.fixed_stage is not None else 0
     self.level = cfg.fixed_level if cfg.fixed_level is not None else C.STAGES[self.stage].level
-    # EV-6 interlock on/off. The curriculum turns it off in S1-S3 (see
+    # EV-6 interlock on/off. The curriculum turns it off in training (see
     # curriculum.py); play / evaluation keep the cfg value (on).
     self.interlock = cfg.interlock
 
@@ -471,7 +471,7 @@ class FlipCommandCfg(CommandTermCfg):
   command_change_prob: float = C.COMMAND_CHANGE_PROB
   input_jitter_steps: int = C.INPUT_JITTER_STEPS
   # EV-6 stability interlock. On for play / evaluation / the real robot; the
-  # training curriculum switches it per stage.
+  # training curriculum keeps it off (interlock_from_stage = -1).
   interlock: bool = True
   # Debug / curriculum overrides (None = automatic).
   fixed_command: int | None = None

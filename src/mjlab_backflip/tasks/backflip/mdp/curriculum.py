@@ -22,10 +22,15 @@ Per stage the term also sets:
   - the command set and level (FlipCommand.set_stage; the level sets the
     success judgement),
   - the DR ranges (narrow in S1-S2, full from S3),
-  - the EV-6 stability interlock (off before ``interlock_from_stage``, S4 by
-    default). With the interlock on from the start, the policy never got
-    the trigger accepted: exploration noise kept the body moving, and
-    staying untriggered (+alive, no failure risk) paid more than flipping.
+  - the EV-6 stability interlock: on from ``interlock_from_stage``; -1 (the
+    default) keeps it off in every stage. Training cannot use it: the
+    exploration noise alone moves the joints by several rad/s, so the
+    stand never counts as still. With it on from the start (2026-11-14)
+    and from S4 (Colab run 2026-11-15, model_750 resumed) no trigger was
+    accepted at all; in S4 the policy forgot the flip (std 0.81 -> 0.26),
+    was demoted after 200 iterations and came back 500 later, over and
+    over. The interlock gates the trigger outside the policy, on the real
+    robot and in evaluation; the stand_still reward teaches the stand.
 
 Reward weights are not touched (revised 2026-11-15): switching terms on
 and off between stages is what the Classmethod Go2 run found to break
@@ -70,7 +75,7 @@ class flip_curriculum:
     self._flip = env.command_manager.get_term(p.get("command_name", "flip"))
     assert isinstance(self._flip, FlipCommand)
     self._ema_alpha = 1.0 / p.get("ema_episodes", 2000)
-    self._interlock_from = p.get("interlock_from_stage", 3)
+    self._interlock_from = p.get("interlock_from_stage", -1)
     self._rates = torch.zeros(3, device=env.device)  # rotation, success (EV-9), landed
     self._cmd_landed = torch.zeros(3, device=env.device)
     self._stage = -1
@@ -112,7 +117,7 @@ class flip_curriculum:
     self._rates.zero_()
     self._cmd_landed.zero_()
     self._flip.set_stage(stage)
-    self._flip.interlock = stage >= self._interlock_from
+    self._flip.interlock = 0 <= self._interlock_from <= stage
     # DR: narrow in S1-S2, full from S3.
     table = C.DR_FULL if stage >= 2 else C.DR_NARROW
     em = self._env.event_manager
@@ -143,7 +148,7 @@ class flip_curriculum:
     ema_episodes: int = 2000,
     start_stage: int = 0,
     fixed_stage: int = -1,
-    interlock_from_stage: int = 3,
+    interlock_from_stage: int = -1,
   ) -> dict[str, float]:
     flip = self._flip
     if isinstance(env_ids, slice):
@@ -168,6 +173,11 @@ class flip_curriculum:
     # Once per policy iteration: streaks, promotion, demotion.
     it = self._iteration({"num_steps_per_env": num_steps_per_env})
     if it != self._last_iter:
+      if it - self._last_iter > 1:
+        # The runner restored common_step_counter from a checkpoint after
+        # the env was built: restart the stay timer, or min_iters would
+        # count the iterations before the resume.
+        self._stage_start_iter = it
       self._last_iter = it
       if fixed_stage >= 0:
         self._set_stage(fixed_stage, it)
