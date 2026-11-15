@@ -4,8 +4,13 @@ Promotion uses achievement rates, not normalized reward (decided
 2026-11-14, see docs/implementation_plan.md):
 
   S1 -> S2: rotation rate   — touchdown with theta_td >= 2 pi - margin(level)
-  S2 -> S3: success rate    — Mid only
-  S3 -> S4: min over commands of the per-command success rate
+  S2 -> S3: landed rate     — Mid only
+  S3 -> S4: min over commands of the per-command landed rate
+
+"Landed" (FlipCommand.landed) replaced the EV-9 success rate on 2026-11-15:
+EV-9 needs the body still for 0.2 s, which the exploration noise never
+allows (Colab run 2026-11-15_01-50-56: 0 % in training while the mean action
+succeeded 64 %). EV-9 is still logged and used for evaluation.
 
 Rates are EMAs over finished episodes whose trigger was accepted (control
 episodes are excluded). Each policy iteration (num_steps_per_env env steps),
@@ -66,8 +71,8 @@ class flip_curriculum:
     assert isinstance(self._flip, FlipCommand)
     self._ema_alpha = 1.0 / p.get("ema_episodes", 2000)
     self._interlock_from = p.get("interlock_from_stage", 3)
-    self._rates = torch.zeros(4, device=env.device)  # rotation, success, low/mid/high min
-    self._cmd_success = torch.zeros(3, device=env.device)
+    self._rates = torch.zeros(3, device=env.device)  # rotation, success (EV-9), landed
+    self._cmd_landed = torch.zeros(3, device=env.device)
     self._stage = -1
     self._stage_start_iter = 0
     self._last_iter = -1
@@ -94,8 +99,8 @@ class flip_curriculum:
     if self._stage == 0:
       return self._rates[0]
     if self._stage == 1:
-      return self._cmd_success[C.MID]
-    return self._cmd_success.min()
+      return self._cmd_landed[C.MID]
+    return self._cmd_landed.min()
 
   def _set_stage(self, stage: int, iteration: int) -> None:
     stage = max(0, min(stage, len(C.STAGES) - 1))
@@ -105,7 +110,7 @@ class flip_curriculum:
     self._stage_start_iter = iteration
     self._above = self._below = 0
     self._rates.zero_()
-    self._cmd_success.zero_()
+    self._cmd_landed.zero_()
     self._flip.set_stage(stage)
     self._flip.interlock = stage >= self._interlock_from
     # DR: narrow in S1-S2, full from S3.
@@ -152,12 +157,13 @@ class flip_curriculum:
       rotated = (flip.max_phase[done] >= C.LAND) & (flip.theta_td[done] >= 2 * math.pi - margin)
       self._rates[0] = self._ema(self._rates[0], rotated.float().mean(), len(done))
       self._rates[1] = self._ema(self._rates[1], flip.success[done].float().mean(), len(done))
+      self._rates[2] = self._ema(self._rates[2], flip.landed[done].float().mean(), len(done))
       cmd = flip.cmd_idx[done]
       for i in range(3):
         mask = cmd == i
         if mask.any():
-          rate = flip.success[done][mask].float().mean()
-          self._cmd_success[i] = self._ema(self._cmd_success[i], rate, int(mask.sum()))
+          rate = flip.landed[done][mask].float().mean()
+          self._cmd_landed[i] = self._ema(self._cmd_landed[i], rate, int(mask.sum()))
 
     # Once per policy iteration: streaks, promotion, demotion.
     it = self._iteration({"num_steps_per_env": num_steps_per_env})
@@ -183,9 +189,10 @@ class flip_curriculum:
       "metric": float(self._metric()),
       "rotation_rate": float(self._rates[0]),
       "success_rate": float(self._rates[1]),
-      "success_low": float(self._cmd_success[C.LOW]),
-      "success_mid": float(self._cmd_success[C.MID]),
-      "success_high": float(self._cmd_success[C.HIGH]),
+      "landed_rate": float(self._rates[2]),
+      "landed_low": float(self._cmd_landed[C.LOW]),
+      "landed_mid": float(self._cmd_landed[C.MID]),
+      "landed_high": float(self._cmd_landed[C.HIGH]),
       "above_streak": float(self._above),
       "below_streak": float(self._below),
       "interlock": float(flip.interlock),

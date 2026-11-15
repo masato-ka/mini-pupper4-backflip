@@ -91,6 +91,9 @@ class FlipCommand(CommandTerm):
     self.f_flip = zeros()  # clip(theta_td / (2 pi - 0.5), 0, 1), latched at T4.
     self.success = zeros(torch.bool)
     self.success_time = zeros()
+    # Curriculum metric: one turn and standing at the end of the flip (no
+    # stillness condition; see constants.LANDED_*). Success also counts.
+    self.landed = zeros(torch.bool)
     # One-step events (true only on the step they happen).
     self.entered = torch.zeros(n, C.NUM_PHASES, device=dev, dtype=torch.bool)
     self.apex_now = zeros(torch.bool)
@@ -101,7 +104,7 @@ class FlipCommand(CommandTerm):
     self._last_update_step = -1
 
     # Per-episode stats, logged as Metrics/flip/<name> by CommandTerm.reset.
-    for name in ("triggered", "success", "max_phase", "theta_td", "H_max"):
+    for name in ("triggered", "success", "landed", "max_phase", "theta_td", "H_max"):
       self.metrics[name] = zeros()
     # EV-14 trackers, logged per finished episode in reset().
     self.phase_dur = torch.zeros(n, C.NUM_PHASES, device=dev)
@@ -296,6 +299,15 @@ class FlipCommand(CommandTerm):
     self.success |= t5
     self.success_now = t5
     self.success_time = torch.where(t5, t, self.success_time)
+    tau = torch.where(self.triggered, t - self.trigger_time, -math.inf)
+    standing = (
+      ((self.theta - 2 * math.pi).abs() <= lvl.success_theta_margin)
+      & upright
+      & (h > C.LANDED_MIN_HEIGHT)
+      & (n_c >= C.LANDED_MIN_FEET)
+    )
+    near_end = tau >= C.FLIP_TAIL_S - C.LANDED_CHECK_S
+    self.landed |= self.success | (near_end & standing & ~init)
 
     # Air bookkeeping: steps since entering Air, rise above takeoff, apex.
     in_air = nxt == C.AIR
@@ -336,6 +348,7 @@ class FlipCommand(CommandTerm):
 
     self.metrics["triggered"] = self.triggered.float()
     self.metrics["success"] = self.success.float()
+    self.metrics["landed"] = self.landed.float()
     self.metrics["max_phase"] = self.max_phase.float()
     self.metrics["theta_td"] = self.theta_td
     self.metrics["H_max"] = self.H_max
@@ -386,7 +399,9 @@ class FlipCommand(CommandTerm):
       buf[env_ids] = 0.0
     for buf in (self.phase, self.max_phase, self.air_cnt, self.air_steps):
       buf[env_ids] = 0
-    for buf in (self.triggered, self.success, self.apex_now, self.apex_done, self.success_now):
+    for buf in (
+      self.triggered, self.success, self.landed, self.apex_now, self.apex_done, self.success_now,
+    ):
       buf[env_ids] = False
     self.entered[env_ids] = False
     self.phase_dur[env_ids] = 0.0
@@ -407,6 +422,7 @@ class FlipCommand(CommandTerm):
       extras["rate/air"] = (reached >= C.AIR).float().mean().item()
       extras["rate/land"] = (reached >= C.LAND).float().mean().item()
       extras["rate/success"] = self.success[env_ids][trig].float().mean().item()
+      extras["rate/landed"] = self.landed[env_ids][trig].float().mean().item()
       cmd = self.cmd_idx[env_ids][trig]
       succ = self.success[env_ids][trig]
       for i, name in enumerate(C.COMMAND_NAMES):

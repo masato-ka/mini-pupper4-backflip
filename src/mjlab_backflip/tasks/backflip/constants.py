@@ -224,6 +224,14 @@ LIN_VEL_Z_CLIP = 3.0  # [m/s]
 ANG_VEL_CLIP = 7.2  # [rad/s]
 FEET_LIFT_TOLERANCE = 0.02  # [m]
 LANDING_THETA_STD = 0.5  # [rad]
+# "Landed" (curriculum metric, 2026-11-15): in the last LANDED_CHECK_S
+# before the flip tail, |theta - 2 pi| <= the level's success margin, upright,
+# h > LANDED_MIN_HEIGHT and at least LANDED_MIN_FEET feet down. Unlike EV-9 it
+# has no stillness / hold condition, which training's exploration noise
+# never lets pass (std 0.75: EV-9 0 %, landed 73 %; mean action: 64 % / 78 %).
+LANDED_CHECK_S = 0.1
+LANDED_MIN_HEIGHT = 0.22  # [m]
+LANDED_MIN_FEET = 3
 LANDING_HEIGHT_STD = 0.1  # [m]
 
 ##

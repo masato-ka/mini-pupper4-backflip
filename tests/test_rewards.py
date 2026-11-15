@@ -145,3 +145,12 @@ def test_flipping_pays_more_than_staying_put(env):
   # The landing term pays only after a full turn: standing still earns ~0.
   assert flip["flip_landing"] > 3.0 and still["flip_landing"] < 1e-3
   assert sum(flip.values()) > sum(still.values()) + 10.0, (flip, still)
+
+
+def test_landed_metric(env):
+  """rate/landed: one turn and standing at the flip tail (no stillness
+  condition). Staying put after the trigger is not a landing."""
+  _episode(env, throw=False)
+  assert env.extras["log"]["Metrics/flip/rate/landed"] == 0.0
+  _episode(env, throw=True)
+  assert env.extras["log"]["Metrics/flip/rate/landed"] == 1.0

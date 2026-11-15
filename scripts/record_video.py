@@ -4,7 +4,10 @@ mjlab's ``play`` opens an interactive viewer after recording, which blocks a
 Colab cell. This script only renders offscreen and exits.
 
   uv run python scripts/record_video.py --checkpoint logs/rsl_rl/go2_backflip/<run>/model_1000.pt \
-      [--command mid] [--seconds 4] [--out flip.mp4] [--device cuda:0]
+      [--command mid] [--seconds 4] [--out flip.mp4] [--interlock] [--device cuda:0]
+
+The EV-6 interlock is off unless --interlock is given (as in training
+S1-S3); a policy trained without it may never get the trigger accepted.
 """
 
 import argparse
@@ -35,6 +38,7 @@ def main() -> None:
   parser.add_argument("--command", choices=C.COMMAND_NAMES, default="mid")
   parser.add_argument("--trigger-at", type=float, default=1.0, help="trigger input time [s]")
   parser.add_argument("--seconds", type=float, default=4.0)
+  parser.add_argument("--interlock", action="store_true", help="EV-6: wait for a still stand")
   parser.add_argument("--width", type=int, default=640)
   parser.add_argument("--height", type=int, default=480)
   parser.add_argument("--out", default=None, help="mp4 path (default: next to the checkpoint)")
@@ -53,6 +57,7 @@ def main() -> None:
   flip_cfg.fixed_command = C.COMMAND_NAMES.index(args.command)
   flip_cfg.command_change_prob = 0.0
   flip_cfg.trigger_delay_range_s = (args.trigger_at, args.trigger_at)
+  flip_cfg.interlock = args.interlock
   agent_cfg = load_rl_cfg(TASK)
 
   env = ManagerBasedRlEnv(cfg=env_cfg, device=args.device, render_mode="rgb_array")

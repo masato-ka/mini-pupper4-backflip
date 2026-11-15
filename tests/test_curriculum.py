@@ -33,7 +33,7 @@ def _params(env):
   return env.curriculum_manager._term_cfgs[0].params
 
 
-def _finish_episodes(env, rotated: bool, success: bool, cmd=None):
+def _finish_episodes(env, rotated: bool, success: bool, cmd=None, landed=None):
   """Fake one batch of finished, triggered episodes and run the curriculum."""
   flip = env.command_manager.get_term("flip")
   ids = torch.arange(env.num_envs)
@@ -42,6 +42,7 @@ def _finish_episodes(env, rotated: bool, success: bool, cmd=None):
   flip.max_phase[:] = C.DONE if rotated else C.AIR
   flip.theta_td[:] = 2 * math.pi if rotated else 0.0
   flip.success[:] = success
+  flip.landed[:] = success if landed is None else landed
   if cmd is not None:
     flip.cmd_idx[:] = cmd
   env.common_step_counter += 24  # One policy iteration.
@@ -101,6 +102,15 @@ def test_promotion_ladder_and_effects(env):
   assert _stage(state) == 3 and flip.level == 2
   assert flip.interlock and state["interlock"] == 1.0
   _assert_weights_untouched(rm)
+
+
+def test_landing_without_ev9_success_promotes(env):
+  """S2 -> S3 uses the landed rate: EV-9 success stays 0 under exploration
+  noise, so it must not block the curriculum."""
+  state = _until_stage(env, 1, rotated=True, success=False)
+  state = _until_stage(env, 2, cmds=(C.MID,), rotated=True, success=False, landed=True)
+  assert _stage(state) == 2  # Rates restart from 0 in the new stage.
+  assert state["success_rate"] == 0.0
 
 
 def test_demotion_after_min_stay(env):
