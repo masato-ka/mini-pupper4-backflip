@@ -83,7 +83,7 @@ def _episode(env, throw: bool, trigger: bool = True):
     flip.trigger_input_time[:] = math.inf
   thrown = landed = False
   steps, sums = [], torch.zeros(len(names))
-  for _ in range(int(4.0 / env.step_dt)):
+  for _ in range(int((C.EPISODE_LENGTH_S + 0.5) / env.step_dt)):
     tau = float(flip.time_since_trigger()[0])
     if throw and not thrown and tau >= C.FLIP_START_S:
       # Hand-thrown flip at the start of the window (the scripted legs

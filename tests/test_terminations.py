@@ -148,7 +148,7 @@ def test_success_tail_is_a_time_out(env):
     return base(env, flip, prev)
 
   done = _run(env, 0, ctrl)
-  # The flip tail (trigger + 1.5 s) may end the episode on the same step.
+  # The flip tail (trigger + FLIP_TAIL_S) may end the episode on the same step.
   assert "success_tail" in done and done <= {"success_tail", "flip_tail"}
   tm = env.termination_manager
   assert all(tm.get_term_cfg(n).time_out for n in done)

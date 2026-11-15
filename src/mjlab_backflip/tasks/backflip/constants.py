@@ -98,7 +98,10 @@ STAGES = (
 # Trigger and command input (EV-3 .. EV-8).
 ##
 
-TRIGGER_DELAY_RANGE_S = (0.5, 1.5)  # EV-3
+# EV-3. Spec: U[0.5, 1.5]; widened to 2.5 s on 2026-11-15: the mean policy of
+# run 2026-11-15_04-43-40 started swaying after ~1-2 s of waiting, and with
+# the interlock the real robot waits until it is still.
+TRIGGER_DELAY_RANGE_S = (0.5, 2.5)
 NO_TRIGGER_PROB = 0.15  # EV-4 (10-20 %)
 COMMAND_CHANGE_PROB = 0.2  # EV-7
 INPUT_JITTER_STEPS = 1  # EV-8: 0..1 step
@@ -174,7 +177,8 @@ OBS_HISTORY = 4
 ACTION_DELAY_PHYSICS_STEPS = 4  # 0.02 s at dt = 0.005.
 ACTION_SCALE = 0.5
 # Untriggered episodes run this long; triggered ones end at FLIP_TAIL_S.
-EPISODE_LENGTH_S = 3.5
+# Latest trigger (2.5 s) + FLIP_TAIL_S fits.
+EPISODE_LENGTH_S = 4.5
 
 ##
 # Rewards (revised 2026-11-15, Genesis-backflip style).
@@ -213,7 +217,10 @@ REWARD_WEIGHTS = {
   # Not in Genesis (added 2026-11-15): stand still until the trigger, so the
   # EV-6 interlock accepts it on the real robot (the interlock is off in
   # training; the mean policy of model_750 passed it in 0-2 % of episodes).
-  "stand_still": -0.1,  # EV-6 filtered |omega| + mean |q_dot|, before the trigger.
+  # -0.1 -> -0.5 (2026-11-15): at -0.1 the mean policy's swaying (raw ~3)
+  # was lost under the exploration noise (raw ~5.6 at std 0.75) and cost
+  # only ~0.3 /s; model_3000 swayed with the Low command (3 % accepted).
+  "stand_still": -0.5,  # EV-6 filtered |omega| + mean |q_dot|, before the trigger.
 }
 
 # Time windows, tau = time since the accepted trigger [s].
