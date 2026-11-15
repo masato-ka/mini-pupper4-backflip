@@ -14,14 +14,17 @@ a rate >= rho extends the "above" streak and a rate < 0.5 rho extends the
 iterations below; either needs min_iters in the current stage.
 
 Per stage the term also sets:
-  - the command set and termination level (FlipCommand.set_stage),
-  - the Land reward weights (0 in S1),
-  - the success_bonus weight (0 in S1, linear ramp 0 -> 20 in S2),
+  - the command set and level (FlipCommand.set_stage; the level sets the
+    success judgement),
   - the DR ranges (narrow in S1-S2, full from S3),
   - the EV-6 stability interlock (off before ``interlock_from_stage``, S4 by
     default). With the interlock on from the start, the policy never got
     the trigger accepted: exploration noise kept the body moving, and
     staying untriggered (+alive, no failure risk) paid more than flipping.
+
+Reward weights are not touched (revised 2026-11-15): switching terms on
+and off between stages is what the Classmethod Go2 run found to break
+training (sudden reward scale changes collapsed the critic).
 
 The curriculum runs at the start of every reset, before the command and
 event resets, so it sees the finished episodes' flip state and its DR
@@ -46,11 +49,6 @@ if TYPE_CHECKING:
   from mjlab.envs import ManagerBasedRlEnv
   from mjlab.managers.curriculum_manager import CurriculumTermCfg
 
-LAND_REWARDS = (
-  "upright", "land_height", "feet_all_contact", "land_damp", "land_effort", "land_action_rate",
-)
-SUCCESS_REWARD = "success_bonus"
-
 # Event term -> (params key, DR table key, how to build the value).
 _DR_EVENTS = {
   "encoder_bias": ("bias_range", "encoder_bias"),
@@ -66,11 +64,6 @@ class flip_curriculum:
     self._env = env
     self._flip = env.command_manager.get_term(p.get("command_name", "flip"))
     assert isinstance(self._flip, FlipCommand)
-    rm = env.reward_manager
-    self._land_weights = {
-      n: rm.get_term_cfg(n).weight for n in LAND_REWARDS if n in rm.active_terms
-    }
-    self._success_weight = rm.get_term_cfg(SUCCESS_REWARD).weight
     self._ema_alpha = 1.0 / p.get("ema_episodes", 2000)
     self._interlock_from = p.get("interlock_from_stage", 3)
     self._rates = torch.zeros(4, device=env.device)  # rotation, success, low/mid/high min
@@ -115,10 +108,6 @@ class flip_curriculum:
     self._cmd_success.zero_()
     self._flip.set_stage(stage)
     self._flip.interlock = stage >= self._interlock_from
-    # Land terms off in S1.
-    rm = self._env.reward_manager
-    for name, w in self._land_weights.items():
-      rm.get_term_cfg(name).weight = 0.0 if stage == 0 else w
     # DR: narrow in S1-S2, full from S3.
     table = C.DR_FULL if stage >= 2 else C.DR_NARROW
     em = self._env.event_manager
@@ -131,14 +120,6 @@ class flip_curriculum:
     if "pd_gains" in em.active_terms.get("reset", []):
       params = em.get_term_cfg("pd_gains").params
       params["kp_range"], params["kd_range"] = table["kp_scale"], table["kd_scale"]
-
-  def _success_bonus_weight(self, iteration: int, ramp_iters: int) -> float:
-    if self._stage == 0:
-      return 0.0
-    if self._stage == 1:
-      frac = min(1.0, (iteration - self._stage_start_iter) / max(1, ramp_iters))
-      return frac * self._success_weight
-    return self._success_weight
 
   ##
   # Curriculum hook.
@@ -153,7 +134,6 @@ class flip_curriculum:
     promote_iters: int = 100,
     demote_iters: int = 200,
     min_iters: int = 500,
-    success_ramp_iters: int = 1000,
     num_steps_per_env: int = 24,
     ema_episodes: int = 2000,
     start_stage: int = 0,
@@ -197,9 +177,6 @@ class flip_curriculum:
         elif stayed and self._stage > 0 and self._below >= demote_iters:
           self._set_stage(self._stage - 1, it)
 
-    w = self._success_bonus_weight(it, success_ramp_iters)
-    env.reward_manager.get_term_cfg(SUCCESS_REWARD).weight = w
-
     return {
       "stage": float(self._stage + 1),  # 1..4 = S1..S4
       "level": float(flip.level),
@@ -211,6 +188,5 @@ class flip_curriculum:
       "success_high": float(self._cmd_success[C.HIGH]),
       "above_streak": float(self._above),
       "below_streak": float(self._below),
-      "success_bonus_weight": w,
       "interlock": float(flip.interlock),
     }

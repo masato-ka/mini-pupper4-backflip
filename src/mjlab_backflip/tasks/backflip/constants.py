@@ -173,77 +173,50 @@ OBS_DELAY_STEPS = (1, 2)  # Policy steps.
 OBS_HISTORY = 4
 ACTION_DELAY_PHYSICS_STEPS = 4  # 0.02 s at dt = 0.005.
 ACTION_SCALE = 0.5
-EPISODE_LENGTH_S = 5.0
+# Untriggered episodes run this long; triggered ones end at FLIP_TAIL_S.
+EPISODE_LENGTH_S = 3.0
 
 ##
-# Rewards. Functions return non-negative magnitudes; the sign is in the weight.
-# Initial values from the spec (Genesis-backflip anchors); tune from the logs.
+# Rewards (revised 2026-11-15, Genesis-backflip style).
+#
+# The flip terms are gated by the time since the accepted trigger, not by the
+# phase state machine: four Colab runs with phase-gated rewards each found a
+# loophole in the gating (dropping the torso, avoiding the trigger, farming
+# Crouch, faking the takeoff). The phases are still tracked for the success
+# judgement, the metrics and the curriculum.
+#
+# Weights and windows follow ziyanx02/Genesis-backflip (reward_wrapper.py,
+# train_backflip.py), whose Go2 learns a backflip in ~1000 iterations. Its
+# go signal is episode time 0.5 s; here it is the trigger plus FLIP_START_S.
+# Functions return the raw value; the weight carries the sign. flip_ang_vel
+# and flip_lin_vel_z are signed (rotating / moving the wrong way costs).
 ##
 
 REWARD_WEIGHTS = {
-  # Common.
-  "action_rate": -0.002,
+  # Flip (time windows below).
+  "flip_orientation": -1.0,  # ||g_b - g_ref(tau)||^2, all the time.
+  "flip_ang_vel": 5.0,  # clip(omega_back, +-7.2), rotation window.
+  "flip_lin_vel_z": 20.0,  # min(v_z, 3), lift window.
+  "feet_height_before": -30.0,  # sum relu(z_foot - 0.02), before the flip.
+  "height_control": -10.0,  # (h - h_nom)^2, before the trigger and after the flip.
+  # Always on.
+  "gravity_y": -10.0,  # g_y^2
+  "ang_vel_z": -1.0,  # |omega_z|
   "actions_symmetry": -0.1,
-  "joint_limits": -1.0,
-  "roll": -10.0,  # Launch..Land
-  "yaw_rate": -1.0,  # Launch..Land
-  "terminal_penalty": -5.0,  # Once per failure (sparse, not scaled by dt).
-  # Survival bonus per second in Stand and Done only; not in the original spec
-  # (added 2026-11-14, restricted to Stand/Done the same day: in the other
-  # phases it paid for loitering in Crouch / Land).
-  # Without it the Stand terms are all penalties and the first run (Colab,
-  # 2026-11-14_05-49-16) learned to drop the torso within 0.3 s.
-  "alive": 1.0,
-  "leg_contact": -1.0,  # Not in the spec's table: thigh/calf contact is penalized, not terminal (TM-2 note).
-  # Stand.
-  "stand_height": -10.0,
-  "stand_pose": -0.5,
-  "stand_still": -1.0,
   "feet_distance": -1.0,
-  # Crouch.
-  "crouch_depth": 2.0,  # Sparse: once at T2.
-  "crouch_level": -5.0,
-  "feet_stay": -30.0,
-  "no_early_pop": -2.0,
-  # Launch.
-  "takeoff_vz": 10.0,
-  "vz_overshoot": -10.0,
-  "pitch_kick": 3.0,
-  "rear_before_front": -5.0,
-  # Air.
-  "apex_bonus": 10.0,  # Sparse.
-  "apex_overshoot": -20.0,
-  "flip_progress": 5.0,
-  "wrong_direction": -0.5,
-  "tuck": 0.0,  # Optional in the spec (-1); off by default.
-  "land_prep": 0.0,  # Optional in the spec (+3); off by default.
-  # Land (positive terms are multiplied by f_flip).
-  "upright": 5.0,
-  "land_height": 2.0,
-  "feet_all_contact": 1.0,
-  "land_damp": -1.0,
-  "land_effort": -5e-5,
-  "land_action_rate": -0.01,
-  "success_bonus": 20.0,  # Sparse; ramped 0 -> 20 by the curriculum (S2).
+  "action_rate": -0.001,
+  "joint_limits": -1.0,  # Not in Genesis; kept from the spec for the real robot.
 }
-# Optional-term weights from the spec, for enabling them from the CLI.
-TUCK_WEIGHT_SPEC = -1.0
-LAND_PREP_WEIGHT_SPEC = 3.0
 
-# Kernel widths and thresholds.
-CROUCH_DEPTH_STD = 0.03
-FEET_STAY_HEIGHT = 0.02  # [m]
-VZ_OVERSHOOT_RATIO = 1.1
-APEX_STD = 0.06
-APEX_OVERSHOOT_RATIO = 1.2
-FLIP_PROGRESS_STD = 0.8
-TUCK_THETA_RANGE = (0.25 * math.pi, 1.5 * math.pi)
-LAND_PREP_THETA = 1.5 * math.pi
-LAND_PREP_STD = 0.5
-UPRIGHT_STD = 0.3
-LAND_HEIGHT_STD = 0.05
-# Tuck pose as offsets from the default pose (thigh forward, knee bent).
-TUCK_OFFSETS = {"thigh": 0.6, "calf": -0.7}
+# Time windows, tau = time since the accepted trigger [s].
+FLIP_START_S = 0.1  # Feet held down before this; height control off from tau = 0.
+FLIP_LIFT_S = 0.25  # flip_lin_vel_z in [start, start + this).
+FLIP_ROTATE_S = 0.5  # flip_ang_vel in [start, start + this); g_ref turns 2 pi over it.
+FLIP_SETTLE_S = 0.9  # height_control again from start + this.
+FLIP_TAIL_S = 1.5  # Truncate the episode at tau = this (time out).
+LIN_VEL_Z_CLIP = 3.0  # [m/s]
+ANG_VEL_CLIP = 7.2  # [rad/s]
+FEET_LIFT_TOLERANCE = 0.02  # [m]
 
 ##
 # Curriculum (mdp/curriculum.py). Iterations are policy iterations.
@@ -256,7 +229,6 @@ CURRICULUM = {
   "promote_iters": 100,  # N
   "demote_iters": 200,
   "min_iters": 500,
-  "success_ramp_iters": 1000,  # S2: success_bonus 0 -> 20.
   "num_steps_per_env": 24,  # Must match the runner.
   "ema_episodes": 2000,
   "start_stage": 0,

@@ -331,3 +331,48 @@ model_250 で、64 env × 3 s のトリガー受理を比べた。
 - crouch_depth を、T2 の瞬間に 1 回だけ与える疎の項にした（`entered[:, LAUNCH]`、`1/dt` を返す）。
 - T3 に `v_z ≥ TAKEOFF_MIN_VZ_RATIO · v*`（0.3）を加えた。テスト `test_lifting_the_feet_without_moving_up_is_not_a_takeoff` は、この条件を外すと失敗する。
 - alive を `phase_gated` で Stand と Done に限った。
+
+## 報酬設計の作り直し: 相ゲートからトリガー時刻ゲートへ（2026-11-15）
+
+### 理由
+
+- 1〜4 回目の学習は、どれも相のゲートか終了条件まわりの抜け穴に落ちた（胴体を落とす、トリガーを避ける、Crouch で稼ぐ、偽の離地で Land に居座る）。
+- 先行事例との比較
+  - Genesis-backflip（Go2、約 1000 イテレーションで成功）: 報酬はエピソード時刻でゲートする。失敗終了はなく、エピソードは 2 s。
+  - Classmethod の記事（Isaac Lab、Go2）: 報酬項を条件フラグで入り切りすると抜け穴ができた。カリキュラムで報酬の規模を急に変えると、Critic が崩れた。着地報酬を大きくすると、その場で跳ねるだけになった。エピソードを 1.5 s に縮めて、その局所解を避けた。
+- ジャンプの能力の測定（CPU、しゃがんでから一気に伸ばす単純な指令、`scripts/measure_jump_capability.py`）
+
+  | Kp | 伸ばす量（行動） | 上昇高さ | 最大 v_z |
+  |---|---|---|---|
+  | 20/40（現行） | 4.0 | 0.14 m | 1.49 m/s |
+  | ×3.5（≒Kp 70） | 4.0 | 0.15 m | 1.68 m/s |
+
+  - 仕様の Δh\* 0.25〜0.45 m（v\* 2.2〜3.0 m/s）は、トルクの上限（23.5/45 Nm）で届かない。Kp を上げても伸びない。
+  - apex_bonus（kern(H − Δh\*, 0.06)）は、ほぼ 0 だった。4 回目の学習の H_max ≈ 0 とも合う。
+
+### 変更
+
+- 報酬は Genesis-backflip の項と重みにした（`constants.REWARD_WEIGHTS`、`mdp/rewards.py`）。時刻 τ はトリガー受理からの経過時間で、Actor の観測にも入っている。
+  - flip_orientation −1: ‖g_b − g_ref(τ)‖²。g_ref は τ ∈ [0.1, 0.6) s で後方へ 2π 回り、その前後は直立。
+  - flip_ang_vel +5: clip(ω_back, ±7.2)、τ ∈ [0.1, 0.6)。
+  - flip_lin_vel_z +20: min(v_z, 3)、τ ∈ [0.1, 0.35)。
+  - feet_height_before −30（τ < 0.1）、height_control −10（τ < 0 または τ > 1.0）。
+  - 常に入る項: gravity_y −10、ang_vel_z −1、actions_symmetry −0.1、feet_distance −1、action_rate −0.001、joint_limits −1。
+- 削除した項: 相ゲートの項すべて、terminal_penalty、alive、leg_contact、success_bonus。脚の接触センサも外した。
+- 終了条件: 学習では TM-8（数値の不安定）だけを終端にした。打ち切りは、time_out（3.0 s）、success_tail、flip_tail（トリガーから 1.5 s、新設）。
+  - TM-2〜TM-7 は `failure_terminations()` で評価やテストに足せる。
+- カリキュラム: 報酬の重みは変えない。コマンドの集合、レベル（成功判定）、DR、インタロックだけを切り替える。
+- 状態機械は残した。成功判定、`rate/*`、EV-14、進級判定に使う。
+
+### 確認（CPU、`tests/test_rewards.py`）
+
+1 エピソードの報酬合計:
+
+| シナリオ | 合計 | 主な内訳 |
+|---|---|---|
+| トリガーなしで立つ | −0.16 | |
+| トリガー後に何もしない | −0.96 | flip_orientation −1.03 |
+| 手で投げたフリップ（τ = 0.1 s で v_z 2 m/s、ω 20 rad/s）+ 着地補助 | +23.2 | flip_ang_vel +16.6、flip_lin_vel_z +7.1 |
+
+- フリップのほうが居座るより得になるので、これまでの抜け穴は成り立たない。
+- 未着手: 高さコマンドの出し分け。Mid でフリップが成立した後に、Δh\* を実測の範囲へ下げ、lin_vel_z の上限をコマンドごとの v\* にする予定。

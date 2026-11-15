@@ -10,11 +10,9 @@ from mjlab.envs import ManagerBasedRlEnv
 from mjlab.tasks.registry import load_env_cfg
 
 from mjlab_backflip.tasks.backflip import constants as C
-from mjlab_backflip.tasks.backflip.mdp.curriculum import LAND_REWARDS
 
 TASK = "Mjlab-Backflip-Flat-Unitree-Go2"
-FAST = {"promote_iters": 3, "demote_iters": 3, "min_iters": 5, "success_ramp_iters": 10,
-        "ema_episodes": 2}
+FAST = {"promote_iters": 3, "demote_iters": 3, "min_iters": 5, "ema_episodes": 2}
 
 
 @pytest.fixture()
@@ -65,14 +63,19 @@ def _until_stage(env, target, max_iters=20, cmds=(None,), **outcome):
   return state
 
 
+def _assert_weights_untouched(rm):
+  # The curriculum never switches reward terms (sudden scale changes broke
+  # the Classmethod Go2 run).
+  for name, w in C.REWARD_WEIGHTS.items():
+    assert rm.get_term_cfg(name).weight == w, name
+
+
 def test_initial_stage_effects(env):
   rm = env.reward_manager
   flip = env.command_manager.get_term("flip")
   assert flip.stage == 0 and flip.level == 0
   assert flip.allowed_commands == (C.MID,)
-  for name in LAND_REWARDS:
-    assert rm.get_term_cfg(name).weight == 0.0  # Land terms off in S1.
-  assert rm.get_term_cfg("success_bonus").weight == 0.0
+  _assert_weights_untouched(rm)
   assert env.event_manager.get_term_cfg("foot_friction").params["ranges"] == C.DR_NARROW["foot_friction"]
   assert not flip.interlock  # EV-6 off until S4.
 
@@ -83,16 +86,11 @@ def test_promotion_ladder_and_effects(env):
   # S1 -> S2 on rotation rate.
   state = _until_stage(env, 1, rotated=True, success=False)
   assert _stage(state) == 1
-  for name in LAND_REWARDS:
-    assert rm.get_term_cfg(name).weight == C.REWARD_WEIGHTS[name]
-  # success_bonus ramps from 0 in S2.
-  w0 = rm.get_term_cfg("success_bonus").weight
-  assert 0.0 <= w0 < C.REWARD_WEIGHTS["success_bonus"]
+  _assert_weights_untouched(rm)
   # S2 -> S3 on Mid success.
   state = _until_stage(env, 2, cmds=(C.MID,), rotated=True, success=True)
   assert _stage(state) == 2
   assert flip.level == 1 and flip.allowed_commands == (C.LOW, C.MID, C.HIGH)
-  assert rm.get_term_cfg("success_bonus").weight == C.REWARD_WEIGHTS["success_bonus"]
   assert env.event_manager.get_term_cfg("foot_friction").params["ranges"] == C.DR_FULL["foot_friction"]
   assert env.event_manager.get_term_cfg("pd_gains").params["kp_range"] == C.DR_FULL["kp_scale"]
   # S3 -> S4 needs every command; Mid alone is not enough.
@@ -102,6 +100,7 @@ def test_promotion_ladder_and_effects(env):
   state = _until_stage(env, 3, cmds=(C.LOW, C.MID, C.HIGH), rotated=True, success=True)
   assert _stage(state) == 3 and flip.level == 2
   assert flip.interlock and state["interlock"] == 1.0
+  _assert_weights_untouched(rm)
 
 
 def test_demotion_after_min_stay(env):

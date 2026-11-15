@@ -160,6 +160,10 @@ class FlipCommand(CommandTerm):
   def allowed_commands(self) -> tuple[int, ...]:
     return C.STAGES[self.stage].commands
 
+  def time_since_trigger(self) -> torch.Tensor:
+    """tau [s] since the accepted trigger; -inf before (and without) it."""
+    return torch.where(self.triggered, self._episode_time() - self.trigger_time, -math.inf)
+
   def base_height(self) -> torch.Tensor:
     return self.robot.data.root_link_pos_w[:, 2] - self._env.scene.env_origins[:, 2]
 

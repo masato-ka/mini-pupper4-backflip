@@ -1,4 +1,9 @@
-"""Termination terms (TM-2 .. TM-9). Thresholds follow the current level.
+"""Termination terms (TM-2 .. TM-10). Thresholds follow the current level.
+
+Training uses only TM-8 and the truncations (revised 2026-11-15, as in
+Genesis-backflip, which has no failure terminations). The failure terms
+TM-2 .. TM-7 stay available for evaluation (``failure_terminations()`` in
+the env cfg).
 
 Every term calls ``flip.update_state()`` first: terminations are the first
 manager to run after physics, so this is where the state machine advances
@@ -107,3 +112,11 @@ def success_tail_elapsed(
   flip = _flip(env, command_name)
   t = env.episode_length_buf.float() * env.step_dt
   return flip.success & (t - flip.success_time >= C.SUCCESS_TAIL_S)
+
+
+def flip_tail_elapsed(env: ManagerBasedRlEnv, command_name: str = "flip") -> torch.Tensor:
+  """Time out FLIP_TAIL_S after the accepted trigger (one flip per episode;
+  the Classmethod Go2 run hopped in place when the episode left room for
+  more than one flip)."""
+  flip = _flip(env, command_name)
+  return flip.time_since_trigger() >= C.FLIP_TAIL_S

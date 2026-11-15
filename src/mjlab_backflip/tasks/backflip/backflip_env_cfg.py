@@ -34,7 +34,6 @@ from mjlab_backflip.tasks.velocity.go2_env_cfg import (
 )
 
 FOOT_RADIUS = 0.022  # Foot collision sphere in go2.xml.
-LEG_GEOM_REGEX = r"^[FR][LR]_(hip|thigh|calf\d)_collision$"
 
 
 def _robot_cfg():
@@ -64,15 +63,7 @@ def _sensors():
     reduce="none",
     num_slots=1,
   )
-  leg_ground = ContactSensorCfg(
-    name="leg_ground_contact",
-    primary=ContactMatch(mode="geom", pattern=LEG_GEOM_REGEX, entity="robot"),
-    secondary=ContactMatch(mode="body", pattern="terrain"),
-    fields=("found", "force"),
-    reduce="none",
-    num_slots=1,
-  )
-  return (feet_ground_contact_cfg(), base_ground, leg_ground)
+  return (feet_ground_contact_cfg(), base_ground)
 
 
 def _history(term: ObservationTermCfg, delay: bool = True) -> ObservationTermCfg:
@@ -253,86 +244,60 @@ def _events(dr_ranges: dict) -> dict[str, EventTermCfg]:
 
 
 def _rewards() -> dict[str, RewardTermCfg]:
-  """Spec reward table. Phase terms are wrapped by ``phase_gated``."""
+  """Genesis-backflip style reward set, gated by the time since the trigger
+  (mdp/rewards.py). Weights in constants.REWARD_WEIGHTS."""
   w = C.REWARD_WEIGHTS
   R = mdp.rewards
   feet = SceneEntityCfg("robot", site_names=FOOT_NAMES)
 
-  def gated(name, phases, fn, **kw):
-    return RewardTermCfg(
-      func=R.phase_gated, weight=w[name], params={"phases": phases, "fn": fn, **kw}
-    )
+  def term(name, func, **params):
+    return RewardTermCfg(func=func, weight=w[name], params=params)
 
-  airborne = (C.LAUNCH, C.AIR, C.LAND)
-  landing = (C.LAND, C.DONE)  # Keep standing well after the success, too.
-  # Foot order in feet_ground_contact: FR, FL, RR, RL.
-  front = tuple(i for i, n in enumerate(FOOT_NAMES) if n[0] == "F")
-  rear = tuple(i for i, n in enumerate(FOOT_NAMES) if n[0] == "R")
   return {
-    # Common.
-    "action_rate": RewardTermCfg(func=envs_mdp.action_rate_l2, weight=w["action_rate"]),
-    "actions_symmetry": RewardTermCfg(func=R.actions_symmetry, weight=w["actions_symmetry"]),
-    "joint_limits": RewardTermCfg(func=envs_mdp.joint_pos_limits, weight=w["joint_limits"]),
-    "roll": gated("roll", airborne, R.roll),
-    "yaw_rate": gated("yaw_rate", airborne, R.yaw_rate),
-    "terminal_penalty": RewardTermCfg(func=R.terminated_once, weight=w["terminal_penalty"]),
-    "alive": gated("alive", (C.STAND, C.DONE), R.alive),
-    "leg_contact": RewardTermCfg(
-      func=R.contact_count, weight=w["leg_contact"], params={"sensor_name": "leg_ground_contact"}
+    # Flip (time-gated).
+    "flip_orientation": term("flip_orientation", R.flip_orientation),
+    "flip_ang_vel": term("flip_ang_vel", R.flip_ang_vel),
+    "flip_lin_vel_z": term("flip_lin_vel_z", R.flip_lin_vel_z),
+    "feet_height_before": term(
+      "feet_height_before", R.feet_height_before, foot_radius=FOOT_RADIUS, asset_cfg=feet
     ),
-    # Stand.
-    "stand_height": gated("stand_height", (C.STAND,), R.stand_height),
-    "stand_pose": gated("stand_pose", (C.STAND,), R.pose_deviation),
-    "stand_still": gated("stand_still", (C.STAND,), R.body_motion),
-    "feet_distance": RewardTermCfg(
-      func=R.feet_distance, weight=w["feet_distance"], params={"asset_cfg": feet}
-    ),
-    # Crouch.
-    "crouch_depth": RewardTermCfg(func=R.crouch_depth, weight=w["crouch_depth"]),  # Once at T2.
-    "crouch_level": gated("crouch_level", (C.CROUCH,), R.pitch_tilt),
-    "feet_stay": gated(
-      "feet_stay", (C.CROUCH,), R.feet_lift, foot_radius=FOOT_RADIUS, asset_cfg=feet
-    ),
-    "no_early_pop": gated("no_early_pop", (C.CROUCH,), R.upward_velocity_sq),
-    # Launch.
-    "takeoff_vz": gated("takeoff_vz", (C.LAUNCH,), R.takeoff_vz),
-    "vz_overshoot": gated("vz_overshoot", (C.LAUNCH,), R.vz_overshoot),
-    "pitch_kick": gated("pitch_kick", (C.LAUNCH,), R.pitch_kick),
-    "rear_before_front": gated(
-      "rear_before_front", (C.LAUNCH,), R.rear_before_front, front_ids=front, rear_ids=rear
-    ),
-    # Air.
-    "apex_bonus": gated("apex_bonus", (C.AIR,), R.apex_bonus),
-    "apex_overshoot": gated("apex_overshoot", (C.AIR,), R.apex_overshoot),
-    "flip_progress": gated("flip_progress", (C.AIR,), R.flip_progress),
-    "wrong_direction": gated("wrong_direction", (C.AIR,), R.wrong_direction),
-    "tuck": RewardTermCfg(func=R.tuck, weight=w["tuck"]),
-    "land_prep": gated("land_prep", (C.AIR,), R.land_prep),
-    # Land.
-    "upright": gated("upright", landing, R.upright),
-    "land_height": gated("land_height", landing, R.land_height),
-    "feet_all_contact": gated("feet_all_contact", landing, R.feet_all_contact),
-    "land_damp": gated("land_damp", landing, R.body_motion),
-    "land_effort": gated("land_effort", landing, envs_mdp.joint_torques_l2),
-    "land_action_rate": gated("land_action_rate", landing, envs_mdp.action_rate_l2),
-    "success_bonus": RewardTermCfg(func=R.success_bonus, weight=w["success_bonus"]),
+    "height_control": term("height_control", R.height_control),
+    # Always on.
+    "gravity_y": term("gravity_y", R.gravity_y),
+    "ang_vel_z": term("ang_vel_z", R.ang_vel_z),
+    "actions_symmetry": term("actions_symmetry", R.actions_symmetry),
+    "feet_distance": term("feet_distance", R.feet_distance, asset_cfg=feet),
+    "action_rate": term("action_rate", envs_mdp.action_rate_l2),
+    "joint_limits": term("joint_limits", envs_mdp.joint_pos_limits),
   }
 
 
-def _terminations() -> dict[str, TerminationTermCfg]:
+def failure_terminations() -> dict[str, TerminationTermCfg]:
+  """TM-2 .. TM-7 (terminal failures at the current level). Not used in
+  training since 2026-11-15; add them to evaluate a policy against the spec's
+  failure conditions."""
   T = TerminationTermCfg
   return {
-    # Failures (terminal).
     "base_contact": T(func=mdp.base_contact, params={"sensor_name": "base_ground_contact"}),  # TM-2
     "base_too_low": T(func=mdp.base_too_low),  # TM-3
     "forward_rotation": T(func=mdp.forward_rotation),  # TM-4
     "over_rotation": T(func=mdp.over_rotation),  # TM-5
     "under_rotated_landing": T(func=mdp.under_rotated_landing),  # TM-6
     "phase_timeout": T(func=mdp.phase_timeout),  # TM-7
+  }
+
+
+def _terminations() -> dict[str, TerminationTermCfg]:
+  """No failure terminations in training (as Genesis-backflip): they made
+  not trying pay (runs 1-4). Only a broken simulation ends an episode."""
+  T = TerminationTermCfg
+  return {
+    # unstable_sim runs first: it advances the flip state machine.
     "unstable_sim": T(func=mdp.unstable_sim),  # TM-8
     # Truncations (time_out=True): the value bootstraps past them.
     "time_out": T(func=envs_mdp.time_out, time_out=True),  # TM-1
     "success_tail": T(func=mdp.success_tail_elapsed, time_out=True),  # TM-9
+    "flip_tail": T(func=mdp.flip_tail_elapsed, time_out=True),  # TM-10
   }
 
 

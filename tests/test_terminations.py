@@ -1,4 +1,8 @@
-"""Each failure / truncation fires for the scenario it is meant for (M3)."""
+"""Each failure / truncation fires for the scenario it is meant for (M3).
+
+The failure terms (TM-2 .. TM-7) are not in the training cfg since
+2026-11-15; the fixture adds them back, as an evaluation would.
+"""
 
 import math
 
@@ -11,6 +15,7 @@ from mjlab.tasks.registry import load_env_cfg
 from mjlab.utils.lab_api.math import quat_from_euler_xyz
 
 from check_state_machine import leg_action
+from mjlab_backflip.tasks.backflip.backflip_env_cfg import failure_terminations
 from mjlab_backflip.tasks.backflip import constants as C
 
 TASK = "Mjlab-Backflip-Flat-Unitree-Go2"
@@ -28,6 +33,7 @@ def env():
   flip.trigger_delay_range_s = (0.5, 0.5)
   flip.input_jitter_steps = 0
   flip.fixed_stage = None
+  cfg.terminations.update(failure_terminations())
   return ManagerBasedRlEnv(cfg=cfg, device="cpu")
 
 
@@ -142,14 +148,22 @@ def test_success_tail_is_a_time_out(env):
     return base(env, flip, prev)
 
   done = _run(env, 0, ctrl)
-  assert done == {"success_tail"}
-  assert env.termination_manager.get_term_cfg("success_tail").time_out
+  # The flip tail (trigger + 1.5 s) may end the episode on the same step.
+  assert "success_tail" in done and done <= {"success_tail", "flip_tail"}
+  tm = env.termination_manager
+  assert all(tm.get_term_cfg(n).time_out for n in done)
 
 
 def test_failures_are_terminal_and_truncations_are_time_outs(env):
   tm = env.termination_manager
   truncations = {n for n in tm.active_terms if tm.get_term_cfg(n).time_out}
-  assert truncations == {"time_out", "success_tail"}
+  assert truncations == {"time_out", "success_tail", "flip_tail"}
+
+
+def test_training_has_no_failure_terminations():
+  terms = load_env_cfg(TASK).terminations
+  assert not set(failure_terminations()) & set(terms)
+  assert {n for n, t in terms.items() if not t.time_out} == {"unstable_sim"}
 
 
 def test_no_hop_after_auto_reset(env):
@@ -181,33 +195,6 @@ def test_no_hop_after_auto_reset(env):
   # ctrl is in actuator order; compare as sets of values per substep.
   for ctrl in ctrl_log:
     assert torch.allclose(ctrl.sort().values, default_target.sort().values, atol=1e-5)
-
-
-def test_failure_costs_the_full_terminal_penalty(env):
-  """A failure costs -5 once (not -5 * dt) and stops the alive bonus."""
-  rm = env.reward_manager
-  names = list(rm.active_terms)
-  i_pen, i_alive = names.index("terminal_penalty"), names.index("alive")
-  totals = torch.zeros(2)
-
-  def ctrl(env, flip, prev):
-    totals[0] += rm._step_reward[0, i_pen] * env.step_dt
-    totals[1] += rm._step_reward[0, i_alive] * env.step_dt
-    if env.episode_length_buf[0] == 1:
-      robot = env.scene["robot"]
-      state = robot.data.default_root_state.clone()
-      state[:, 2] = 0.5
-      state[:, 3:7] = quat_from_euler_xyz(torch.tensor([math.pi]), torch.zeros(1), torch.zeros(1))
-      robot.write_root_state_to_sim(state)
-      flip._needs_init[0] = True
-    return torch.zeros(1, 12)
-
-  done = _run(env, 2, ctrl)
-  assert "base_contact" in done
-  # The last step's reward is read after _run returns.
-  totals[0] += rm._step_reward[0, i_pen] * env.step_dt
-  assert totals[0].item() == pytest.approx(C.REWARD_WEIGHTS["terminal_penalty"], rel=1e-4)
-  assert rm._step_reward[0, i_alive].item() == 0.0
 
 
 def test_ev14_drift_uses_the_final_pose(env):

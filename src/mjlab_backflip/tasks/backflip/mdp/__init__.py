@@ -18,6 +18,7 @@ from mjlab_backflip.tasks.backflip.mdp.observations import (
 from mjlab_backflip.tasks.backflip.mdp.terminations import (
   base_contact,
   base_too_low,
+  flip_tail_elapsed,
   forward_rotation,
   over_rotation,
   phase_timeout,
