@@ -262,6 +262,7 @@ def _rewards() -> dict[str, RewardTermCfg]:
       "feet_height_before", R.feet_height_before, foot_radius=FOOT_RADIUS, asset_cfg=feet
     ),
     "height_control": term("height_control", R.height_control),
+    "flip_landing": term("flip_landing", R.flip_landing),
     # Always on.
     "gravity_y": term("gravity_y", R.gravity_y),
     "ang_vel_z": term("ang_vel_z", R.ang_vel_z),

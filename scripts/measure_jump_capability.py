@@ -4,7 +4,8 @@ at the default PD gains and at x3.5 (~ Kp 70). Prints the peak rise and v_z.
   uv run python scripts/measure_jump_capability.py
 
 Result (2026-11-15, CPU): rise 0.14 m / 1.49 m/s at the default gains and
-0.15 m / 1.68 m/s at x3.5, far from the spec's dh* 0.25-0.45 m.
+0.15 m / 1.68 m/s at x3.5. This is NOT the robot's limit: the trained
+policy reached v_z 3.3 m/s and H 0.35 m (Colab run 2026-11-15_00-56-47).
 """
 
 import torch

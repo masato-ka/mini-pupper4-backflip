@@ -16,7 +16,7 @@ from mjlab_backflip.tasks.backflip import constants as C
 from mjlab_backflip.tasks.backflip.mdp.rewards import reference_gravity
 
 TASK = "Mjlab-Backflip-Flat-Unitree-Go2"
-POSITIVE = {"flip_ang_vel", "flip_lin_vel_z"}
+POSITIVE = {"flip_ang_vel", "flip_lin_vel_z", "flip_landing"}
 WINDOWED = {"flip_ang_vel": (C.FLIP_START_S, C.FLIP_ROTATE_S),
             "flip_lin_vel_z": (C.FLIP_START_S, C.FLIP_LIFT_S)}
 TRIGGER_AT = 0.5
@@ -129,6 +129,7 @@ def test_windows(env):
 def test_untriggered_episode_has_no_flip_reward(env):
   sums, _, done, _ = _episode(env, throw=False, trigger=False)
   assert sums["flip_ang_vel"] == 0.0 and sums["flip_lin_vel_z"] == 0.0
+  assert sums["flip_landing"] == 0.0
   assert done == {"time_out"}
 
 
@@ -141,4 +142,6 @@ def test_flipping_pays_more_than_staying_put(env):
   assert done_still == {"flip_tail"}
   assert done_flip <= {"flip_tail", "success_tail"} and done_flip
   assert flip["flip_ang_vel"] > 5.0 and flip["flip_lin_vel_z"] > 0.0
+  # The landing term pays only after a full turn: standing still earns ~0.
+  assert flip["flip_landing"] > 3.0 and still["flip_landing"] < 1e-3
   assert sum(flip.values()) > sum(still.values()) + 10.0, (flip, still)

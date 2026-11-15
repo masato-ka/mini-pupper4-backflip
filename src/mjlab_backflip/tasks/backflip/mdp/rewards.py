@@ -4,7 +4,8 @@ The flip terms are gated by tau, the time since the accepted trigger, on the
 Genesis-backflip timeline (constants.py): feet down before the flip, upward
 velocity in the lift window, backward pitch rate in the rotation window, a
 reference attitude that turns one full backflip over the rotation window,
-and the standing height before the trigger and after the flip. Without a
+the standing height before the trigger and after the flip, and (added to
+the Genesis set) a landing term for standing after exactly one turn. Without a
 trigger (control episodes) tau = -inf, so only the standing terms apply.
 
 The phase state machine is not used for gating any more: every phase-gated
@@ -44,6 +45,10 @@ def _flip(env: ManagerBasedRlEnv, command_name: str = "flip") -> FlipCommand:
   assert isinstance(term, FlipCommand)
   term.update_state()
   return term
+
+
+def kern(x: torch.Tensor, std: float) -> torch.Tensor:
+  return torch.exp(-torch.square(x / std))
 
 
 def _in_window(tau: torch.Tensor, start: float, length: float) -> torch.Tensor:
@@ -111,6 +116,22 @@ def height_control(env: ManagerBasedRlEnv, command_name: str = "flip") -> torch.
   tau = flip.time_since_trigger()
   active = (tau < 0.0) | (tau > C.FLIP_START_S + C.FLIP_SETTLE_S)
   return torch.where(active, torch.square(flip.base_height() - flip.spec.h_nom), 0.0)
+
+
+def flip_landing(env: ManagerBasedRlEnv, command_name: str = "flip") -> torch.Tensor:
+  """kern(theta - 2 pi, 0.5) * kern(h - h_nom, 0.1) * n_c / 4 once the
+  rotation window is over: standing on the feet after exactly one turn.
+
+  ~0 without a flip (theta ~ 0) and after over-rotating, so it cannot be
+  earned by hopping in place (the Classmethod failure with a large landing
+  reward). A continuous function of the state, not a phase flag.
+  """
+  flip = _flip(env, command_name)
+  rot = kern(flip.theta - 2 * math.pi, C.LANDING_THETA_STD)
+  height = kern(flip.base_height() - flip.spec.h_nom, C.LANDING_HEIGHT_STD)
+  feet = flip.foot_contact().float().mean(dim=-1)
+  after = flip.time_since_trigger() >= C.FLIP_START_S + C.FLIP_ROTATE_S
+  return torch.where(after, rot * height * feet, 0.0)
 
 
 ##

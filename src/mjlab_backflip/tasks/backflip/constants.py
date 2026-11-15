@@ -174,7 +174,7 @@ OBS_HISTORY = 4
 ACTION_DELAY_PHYSICS_STEPS = 4  # 0.02 s at dt = 0.005.
 ACTION_SCALE = 0.5
 # Untriggered episodes run this long; triggered ones end at FLIP_TAIL_S.
-EPISODE_LENGTH_S = 3.0
+EPISODE_LENGTH_S = 3.5
 
 ##
 # Rewards (revised 2026-11-15, Genesis-backflip style).
@@ -199,6 +199,10 @@ REWARD_WEIGHTS = {
   "flip_lin_vel_z": 20.0,  # min(v_z, 3), lift window.
   "feet_height_before": -30.0,  # sum relu(z_foot - 0.02), before the flip.
   "height_control": -10.0,  # (h - h_nom)^2, before the trigger and after the flip.
+  # Not in Genesis (added 2026-11-15): standing after one full turn. Without
+  # it the landing was almost free (Colab run 2026-11-15_00-56-47: the mean
+  # policy over-rotated to 1.5 turns and landed on its back).
+  "flip_landing": 20.0,  # kern(theta - 2 pi) kern(h - h_nom) n_c / 4, after the rotation.
   # Always on.
   "gravity_y": -10.0,  # g_y^2
   "ang_vel_z": -1.0,  # |omega_z|
@@ -213,10 +217,14 @@ FLIP_START_S = 0.1  # Feet held down before this; height control off from tau = 
 FLIP_LIFT_S = 0.25  # flip_lin_vel_z in [start, start + this).
 FLIP_ROTATE_S = 0.5  # flip_ang_vel in [start, start + this); g_ref turns 2 pi over it.
 FLIP_SETTLE_S = 0.9  # height_control again from start + this.
-FLIP_TAIL_S = 1.5  # Truncate the episode at tau = this (time out).
+# Truncate the episode at tau = this (time out). Was 1.5 (Genesis); the
+# policy touched down at tau ~ 1.0 s, leaving too little time to settle.
+FLIP_TAIL_S = 2.0
 LIN_VEL_Z_CLIP = 3.0  # [m/s]
 ANG_VEL_CLIP = 7.2  # [rad/s]
 FEET_LIFT_TOLERANCE = 0.02  # [m]
+LANDING_THETA_STD = 0.5  # [rad]
+LANDING_HEIGHT_STD = 0.1  # [m]
 
 ##
 # Curriculum (mdp/curriculum.py). Iterations are policy iterations.
